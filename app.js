@@ -99,9 +99,12 @@
     return key;
   }
 
+  // 메인 채널 여부 (필터 기본 선택 기준)
+  function isMainChannel(key) { return key === 'main' || key === 'メイン'; }
+
   // 필터 표시 순서: 메인 → 정보 → 잡담 → 비밀 → 그 외(등장 순)
   function channelRank(key) {
-    if (key === 'main' || key === 'メイン') return 0;
+    if (isMainChannel(key)) return 0;
     if (key === 'info') return 1;
     if (key === 'other') return 2;
     if (/^비밀\(/.test(key)) return 3;
@@ -116,11 +119,13 @@
     }
     const ordered = [...map].sort((a, b) => channelRank(a[0]) - channelRank(b[0]));
     els.channelList.innerHTML = '';
+    // 시작 시엔 메인 탭만 선택된 상태로 둔다(나머지는 사용자가 직접 체크).
     for (const [key, label] of ordered) {
       const id = 'ch_' + btoa(unescape(encodeURIComponent(key))).replace(/[^a-z0-9]/gi, '');
       const wrap = document.createElement('label');
       wrap.className = 'opt';
-      wrap.innerHTML = `<input type="checkbox" class="chk-channel" value="${escapeHtml(key)}" id="${id}" checked> ${escapeHtml(label)}`;
+      const checked = isMainChannel(key) ? ' checked' : '';
+      wrap.innerHTML = `<input type="checkbox" class="chk-channel" value="${escapeHtml(key)}" id="${id}"${checked}> ${escapeHtml(label)}`;
       els.channelList.appendChild(wrap);
     }
     els.channelList.querySelectorAll('.chk-channel').forEach(c => c.addEventListener('change', render));

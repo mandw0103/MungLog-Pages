@@ -132,7 +132,9 @@
   const df = (f) => Object.fromEntries(Object.entries(f).map(([k, v]) => [k, dv(v)]));
 
   // ── 컬렉션 전체 수집(페이지네이션) ───────────────────────────
-  async function fetchAll(col, onProgress) {
+  // keep(doc) 가 false 인 문서는 누적하지 않는다(예: 잡담 채널 제외).
+  // 진행 숫자(out.length)도 걸러낸 뒤 기준이 된다.
+  async function fetchAll(col, onProgress, keep) {
     const out = [];
     let pageToken = '';
     do {
@@ -145,7 +147,10 @@
         throw new Error(`${col} 수집 실패 (${r.status})`);
       }
       const j = await r.json();
-      (j.documents || []).forEach(d => out.push({ _id: d.name.split('/').pop(), ...df(d.fields || {}) }));
+      (j.documents || []).forEach(d => {
+        const doc = { _id: d.name.split('/').pop(), ...df(d.fields || {}) };
+        if (!keep || keep(doc)) out.push(doc);
+      });
       pageToken = j.nextPageToken || '';
       if (onProgress) onProgress(out.length);
       console.log(`[수집] ${col}: ${out.length}건...`);
@@ -156,10 +161,16 @@
   console.log('%c[ccfolia 수집기] 시작', 'color:#4af;font-weight:bold', { roomId });
   try {
     banner.set('로그 수집 중… 0건');
+    // 잡담(other) 채널은 수집 단계에서 제외한다.
+    // 분류 기준은 변환기와 동일하게 channelName(없으면 channel) 값.
+    const isChat = (m) => {
+      const k = m.channelName || m.channel;
+      return k === 'other' || k === '잡담';
+    };
     const messages = await fetchAll('messages', (n) => {
       banner.set(`로그 수집 중… ${n}건`);
       postProgress(n);
-    });
+    }, (m) => !isChat(m));
 
     // createdAt(ISO 문자열) 기준 시간순 정렬
     messages.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>코코포리아 변환기</title>
+  <link rel="icon" type="image/png" href="icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site-header">
+    <h1>코코포리아 변환기</h1>
+  </header>
+
+  <main>
+    <section class="panel">
+      <h2>1. 로그 가져오기</h2>
+
+      <div class="get-method">
+        <p>아래 <strong>"코코포리아 로그 가져오기"</strong> 버튼을 <strong>북마크바로 드래그</strong>해 한 번 등록하세요.
+           이후 ccfolia 방 화면에서 그 북마크를 누르면, 이 변환기로 로그가 바로 들어옵니다.</p>
+        <p>
+          <a id="bookmarklet" class="btn primary" href="javascript:void 0" draggable="true"
+             onclick="alert('이 버튼은 클릭하지 말고 북마크바로 드래그해 등록하세요.\n등록 후 ccfolia 방 화면에서 그 북마크를 누르면 됩니다.'); return false;">코코포리아 로그 가져오기</a>
+        </p>
+        <p class="hint">ccfolia 에 로그인되어 있고 그 방의 멤버여야 합니다.</p>
+      </div>
+
+      <p id="loadInfo" class="info" hidden></p>
+    </section>
+
+    <section class="panel" id="optionsPanel" hidden>
+      <h2>2. 옵션</h2>
+      <div class="options">
+        <label class="opt"><input type="checkbox" id="optTime" checked> 시간 표시</label>
+      </div>
+      <div class="channels">
+        <span class="channels-label">채널 필터:</span>
+        <div id="channelList" class="channel-list"></div>
+      </div>
+      <div class="range-mode">
+        <div class="toggle">
+          <button type="button" id="modeNum" class="toggle-btn active">로그 갯수로 이어 출력</button>
+          <button type="button" id="modeText" class="toggle-btn">대사로 이어 출력</button>
+        </div>
+
+        <div class="range" id="rangeNum">
+          <span class="range-text">선택한 탭의 로그 <strong id="totalCount">0</strong>건 중,
+            <input type="number" id="optStart" class="num" min="1" value="1"> 번째부터 끝까지 출력</span>
+        </div>
+
+        <div class="search" id="rangeText" hidden>
+          <span class="search-label">대사로 찾기:</span>
+          <input type="text" id="searchText" class="text-in" placeholder="대사 전체를 정확히 입력">
+          <button type="button" id="searchBtn" class="btn">이 대사 다음부터 출력</button>
+          <span id="searchInfo" class="search-info"></span>
+        </div>
+
+        <span id="rangeInfo" class="range-info"></span>
+      </div>
+    </section>
+
+    <section class="panel" id="outputPanel" hidden>
+      <div class="output-head">
+        <h2>3. 결과</h2>
+        <div class="actions">
+          <button type="button" id="copyBtn" class="btn">HTML 복사</button>
+          <button type="button" id="downloadBtn" class="btn primary">HTML 다운로드</button>
+        </div>
+      </div>
+      <iframe id="preview" title="미리보기"></iframe>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>비공식 도구 · 본인이 접근 권한을 가진 방의 로그만 사용하세요.</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

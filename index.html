@@ -64,10 +64,14 @@
       <div class="output-head">
         <h2>3. 결과</h2>
         <div class="actions">
+          <button type="button" id="cutinBtn" class="btn">컷인 삽입</button>
           <button type="button" id="copyBtn" class="btn">HTML 복사</button>
           <button type="button" id="downloadBtn" class="btn primary">HTML 다운로드</button>
         </div>
       </div>
+      <p id="cutinHint" class="hint" hidden>미리보기에서 로그 경계에 마우스를 가져가면 <strong>파란 줄</strong>이 나타납니다.
+         원하는 위치에서 클릭해 이미지를 넣으세요. 컷인 위의 <strong>🗑</strong> 로 삭제합니다. 큰 이미지는 자동으로 줄여 저장됩니다.</p>
+      <input type="file" id="cutinFile" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
       <iframe id="preview" title="미리보기"></iframe>
     </section>
   </main>

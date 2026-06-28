@@ -5,6 +5,16 @@
   let messages = [];      // 로드된 전체 메시지
   let roomId = '';
 
+  // ── 컷인(로그 사이 이미지) 상태 ──────────────────────────────
+  let cutins = [];           // [{ id, afterId, src }] — afterId 메시지 _id(또는 TOP) 뒤에 삽입
+  let insertMode = false;    // 컷인 삽입 모드(미리보기에 슬롯/삭제버튼 표시)
+  let pendingAfterId = null; // 슬롯 클릭으로 고른 삽입 위치(파일 선택 대기)
+  let cutinSeq = 0;          // 컷인 고유 id 카운터
+  let preserveScroll = 0;    // 재렌더 시 유지할 미리보기 스크롤 위치
+  let freshLoad = false;     // 새 로그를 받은 직후엔 스크롤을 맨 위로
+  const TOP = '__top__';     // 맨 위(첫 메시지 앞) 앵커
+  const MAX_CUTIN_W = 800;   // 이보다 가로가 크면 줄여서 임베드(용량 절감)
+
   const $ = (sel) => document.querySelector(sel);
 
   const els = {
@@ -27,6 +37,9 @@
     copyBtn: $('#copyBtn'),
     downloadBtn: $('#downloadBtn'),
     bookmarklet: $('#bookmarklet'),
+    cutinBtn: $('#cutinBtn'),
+    cutinFile: $('#cutinFile'),
+    cutinHint: $('#cutinHint'),
   };
 
   // ── 유틸 ─────────────────────────────────────────────────────
@@ -58,6 +71,11 @@
     const list = Array.isArray(data) ? data : data && data.messages;
     if (!Array.isArray(list)) throw new Error('messages 배열을 찾을 수 없습니다.');
     messages = list;
+    // 컷인 앵커로 쓸 안정적인 _id 보장(수집기 JSON 엔 항상 있으나, 없으면 순번으로 채움)
+    messages.forEach((m, i) => { if (m._id == null) m._id = 'm' + i; });
+    // 새 로그를 받으면 이전 컷인·삽입 모드는 초기화한다(예전 메시지를 가리키므로).
+    cutins = [];
+    insertMode = false;
     roomId = (data && data.roomId) || '';
     onLoaded();
   }
@@ -79,9 +97,11 @@
     els.optStart.value = '1';
     els.searchText.value = '';
     setSearchInfo('', '');
+    syncCutinUI();
     buildChannelFilter();
     els.optionsPanel.hidden = false;
     els.outputPanel.hidden = false;
+    freshLoad = true;   // 새 로그는 맨 위부터 보여준다(스크롤 복원 건너뜀)
     render();
   }
 
@@ -299,21 +319,65 @@ ${HR}`;
 ${HR}`;
   }
 
-  function buildDocument(list) {
+  // ── 컷인(로그 사이 이미지) HTML ──────────────────────────────
+  // 일반 로그(.gap)와 같은 좌우 패딩·아래 구분선(HR)을 써서 여백을 로그와 맞춘다.
+  // 이미지는 가운데 정렬하고, 가로가 넘치면 100%로 축소해 영역 안에 들어오게 한다.
+  function cutinHtml(c, opt) {
+    // 삭제 버튼은 미리보기(삽입 모드)에서만 — 다운로드 HTML 엔 들어가지 않는다.
+    const del = opt.preview
+      ? `<button type="button" class="cutin-del" data-id="${c.id}" title="컷인 삭제">🗑</button>`
+      : '';
+    return `    <div class="gap cutin" style="display: flex; justify-content: center; background-color: transparent; position: relative;">
+        ${del}<img src="${c.src}" alt="컷인" style="max-width: 100%; border-radius: 5px; display: block;">
+    </div>
+${HR}`;
+  }
+
+  // afterId 앵커에 달린 컷인들(삽입 순서 유지)
+  function cutinsFor(anchor) { return cutins.filter(c => c.afterId === anchor); }
+
+  // 메시지 행 + 컷인을 한 줄씩 엮는다.
+  // 삽입 모드(preview)에선 슬롯을 일일이 그리지 않고, 각 행에 위/아래 삽입 앵커만
+  // 심어 둔다. 실제 파란 띠는 마우스에 가까운 경계 한 곳에만 JS 로 띄운다(가벼움).
+  function buildRows(items, opt) {
+    const rows = [];
+    cutinsFor(TOP).forEach(c => rows.push(cutinHtml(c, opt)));
+    let prevMid = TOP;                       // 직전 메시지 _id(맨 위는 TOP)
+    for (const m of items) {
+      let row = messageHtml(m, opt);
+      if (opt.preview) {
+        // 행 위쪽 경계 = 직전 메시지 뒤(=이 메시지 앞), 아래쪽 경계 = 이 메시지 뒤
+        const attrs = ` data-mid="${escapeHtml(m._id)}"`
+          + ` data-top-after="${escapeHtml(prevMid)}" data-bottom-after="${escapeHtml(m._id)}"`;
+        row = row.replace('<div class="gap"', '<div class="gap"' + attrs);
+      }
+      rows.push(row);
+      cutinsFor(m._id).forEach(c => rows.push(cutinHtml(c, opt)));
+      prevMid = m._id;
+    }
+    return rows.join('\n');
+  }
+
+  function buildDocument(list, view) {
     const opt = {
       time: els.optTime.checked,
+      preview: !!(view && view.preview),
     };
     const items = list || ranged();
-    const rows = items.map(m => messageHtml(m, opt)).join('\n');
+    const rows = buildRows(items, opt);
+    const extraCss = opt.preview ? PREVIEW_CSS : '';
+    // 마우스에 가까운 경계에 띄울 삽입 슬롯(미리보기 전용, JS 가 위치를 옮긴다)
+    const bandEl = opt.preview ? '<div id="cutin-band">+ 여기에 컷인 삽입</div>' : '';
     return `
     <html>
       <head>
       <meta charset="UTF-8">
         <style>
-${OUTPUT_CSS}
+${OUTPUT_CSS}${extraCss}
         </style>
       </head>
       <body>
+${bandEl}
         <div class="ccfolia_wrap">
 
       <div style="text-align: center; margin-top: 30px;">
@@ -396,6 +460,49 @@ padding: 16px 16px;
 }
 `;
 
+  // 미리보기(삽입 모드)에서만 끼워 넣는 CSS — 삽입 슬롯·컷인 윤곽·삭제 버튼.
+  // 다운로드 HTML 에는 포함되지 않는다.
+  // 삽입 보조 UI 는 항상 DOM 에 있지만, body.insert-mode 일 때만 보이게 한다.
+  // (삽입 모드 토글을 reload 없이 클래스만으로 처리해 깜빡임을 없애기 위함)
+  const PREVIEW_CSS = `
+body.insert-mode .ccfolia_wrap{ cursor: pointer; }
+/* 마우스에 가까운 로그 경계 한 곳에만 뜨는 삽입 슬롯(점선 네모 + 안내문) */
+#cutin-band{
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  transform: translateY(-50%);
+  display: none;
+  z-index: 5;
+  pointer-events: none;
+  box-sizing: border-box;
+  text-align: center;
+  color: rgb(210, 235, 255);
+  font-size: 13px;
+  padding: 6px;
+  border: 1px dashed rgb(120, 170, 255);
+  border-radius: 6px;
+  background: rgba(120, 160, 210, 0.18);
+}
+body.insert-mode .cutin{ outline: 1px dashed rgba(120, 160, 210, 0.45); outline-offset: -4px; }
+.cutin-del{
+  display: none;
+  position: absolute;
+  top: 8px;
+  right: 24px;
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 9px;
+  font-size: 14px;
+  z-index: 2;
+}
+body.insert-mode .cutin-del{ display: block; }
+.cutin-del:hover{ background: rgba(180, 50, 50, 0.85); }
+`;
+
   // ── 렌더 ─────────────────────────────────────────────────────
   function render() {
     const all = filtered();
@@ -410,9 +517,17 @@ padding: 16px 16px;
         ? `→ ${start}~${all.length}번째, ${list.length}건 출력`
         : '→ 출력할 로그가 없습니다 (범위 끝)';
 
-    const html = buildDocument(list);
-    els.preview.srcdoc = html;
-    els.preview.dataset.html = html;
+    // srcdoc 을 새로 쓰면 iframe 이 reload 되어 스크롤이 맨 위로 튄다.
+    // 현재 위치를 저장해 두고 load 후 복원한다(새 로그 직후엔 맨 위로).
+    const win = els.preview.contentWindow;
+    preserveScroll = freshLoad ? 0 : (win ? (win.scrollY || 0) : 0);
+    freshLoad = false;
+
+    // 다운로드·복사에 쓸 깨끗한 HTML(컷인 포함, 삽입 보조 UI 제외)
+    els.preview.dataset.html = buildDocument(list, { preview: false });
+    // 미리보기는 삽입 보조 UI(띠·삭제버튼·앵커)를 항상 포함해 그린다.
+    // 삽입 모드 on/off 는 body.insert-mode 클래스로만 토글하므로 reload(깜빡임)가 없다.
+    els.preview.srcdoc = buildDocument(list, { preview: true });
   }
 
   function download() {
@@ -441,6 +556,124 @@ padding: 16px 16px;
     }
   }
 
+  // ── 컷인 삽입/삭제 ───────────────────────────────────────────
+  // 버튼 라벨·안내·활성 표시를 현재 모드에 맞춘다.
+  function syncCutinUI() {
+    els.cutinBtn.classList.toggle('active', insertMode);
+    els.cutinBtn.textContent = insertMode ? '컷인 삽입 완료' : '컷인 삽입';
+    els.cutinHint.hidden = !insertMode;
+  }
+
+  function toggleInsertMode() {
+    insertMode = !insertMode;
+    pendingAfterId = null;
+    syncCutinUI();
+    // reload 없이 미리보기 body 클래스만 토글 → 스크롤 유지, 깜빡임 없음.
+    const doc = els.preview.contentDocument;
+    if (doc && doc.body) {
+      doc.body.classList.toggle('insert-mode', insertMode);
+      if (!insertMode) {
+        const band = doc.getElementById('cutin-band');
+        if (band) band.style.display = 'none';   // 끄면 떠 있던 띠를 즉시 감춘다
+      }
+    }
+  }
+
+  // 로컬 이미지 파일 → Base64 Data URL. 가로가 MAX_CUTIN_W 보다 크면 canvas 로 줄여
+  // 임베드 용량을 절감한다(작으면 원본을 그대로 임베드해 재인코딩 손실을 피한다).
+  function fileToCutinSrc(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(reader.error || new Error('파일을 읽지 못했습니다.'));
+      reader.onload = () => {
+        const dataUrl = reader.result;
+        const img = new Image();
+        img.onerror = () => reject(new Error('이미지 형식을 읽지 못했습니다.'));
+        img.onload = () => {
+          if (!img.width || img.width <= MAX_CUTIN_W) { resolve(dataUrl); return; }
+          const scale = MAX_CUTIN_W / img.width;
+          const cv = document.createElement('canvas');
+          cv.width = MAX_CUTIN_W;
+          cv.height = Math.round(img.height * scale);
+          cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+          // png 는 투명도 보존, 그 외는 용량이 작은 jpeg 로 인코딩
+          const type = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+          resolve(cv.toDataURL(type, 0.9));
+        };
+        img.src = dataUrl;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function addCutin(file) {
+    if (pendingAfterId == null) return;
+    const afterId = pendingAfterId;
+    fileToCutinSrc(file)
+      .then(src => { cutins.push({ id: ++cutinSeq, afterId, src }); render(); })
+      .catch(err => alert('이미지를 넣지 못했습니다: ' + err.message))
+      .finally(() => { pendingAfterId = null; });
+  }
+
+  function removeCutin(id) {
+    cutins = cutins.filter(c => String(c.id) !== String(id));
+    render();
+  }
+
+  // 미리보기 reload 직후: 스크롤 복원 + 현재 모드 클래스 반영 + 핸들러 연결.
+  function onPreviewLoad() {
+    const win = els.preview.contentWindow;
+    const doc = els.preview.contentDocument;
+    if (win) win.scrollTo(0, preserveScroll);
+    if (doc && doc.body) doc.body.classList.toggle('insert-mode', insertMode);
+    wirePreview();
+  }
+
+  // 삽입 보조 UI 는 항상 DOM 에 있으므로 핸들러도 항상 연결하되, 동작은 insertMode 로 막는다.
+  function wirePreview() {
+    const doc = els.preview.contentDocument;
+    const win = els.preview.contentWindow;
+    if (!doc || !win) return;
+    const band = doc.getElementById('cutin-band');
+
+    // 삭제 버튼은 자기 클릭만 처리하고 삽입으로 번지지 않게 막는다.
+    doc.querySelectorAll('.cutin-del').forEach(el =>
+      el.addEventListener('click', (ev) => { ev.stopPropagation(); removeCutin(el.dataset.id); }));
+
+    let curAfter = null;   // 현재 띠가 가리키는 삽입 위치(afterId)
+    let raf = 0;
+    const hide = () => { if (band) band.style.display = 'none'; curAfter = null; };
+
+    doc.addEventListener('mousemove', (e) => {
+      if (raf) return;                          // rAF 로 1프레임당 한 번만 계산
+      raf = win.requestAnimationFrame(() => {
+        raf = 0;
+        if (!band || !insertMode) { hide(); return; }   // 삽입 모드 아닐 땐 띠를 띄우지 않음
+        const node = e.target && e.target.nodeType === 1 ? e.target : (e.target && e.target.parentElement);
+        const row = node && node.closest ? node.closest('.gap[data-mid]') : null;
+        if (!row) { hide(); return; }
+        const rect = row.getBoundingClientRect();
+        const topHalf = e.clientY < rect.top + rect.height / 2;   // 위/아래 절반으로 경계 결정
+        curAfter = topHalf ? row.dataset.topAfter : row.dataset.bottomAfter;
+        const scrollTop = doc.documentElement.scrollTop || doc.body.scrollTop || 0;
+        band.style.top = (topHalf ? rect.top : rect.bottom) + scrollTop + 'px';
+        band.style.display = 'block';
+      });
+    });
+    doc.addEventListener('mouseleave', hide);
+
+    // 경계 근처를 클릭하면 그 위치에 컷인을 넣는다(삭제 버튼 클릭은 위에서 가로챔).
+    doc.addEventListener('click', (e) => {
+      if (!insertMode) return;
+      const node = e.target && e.target.nodeType === 1 ? e.target : null;
+      if (node && node.closest && node.closest('.cutin-del')) return;
+      if (curAfter == null) return;
+      pendingAfterId = curAfter;
+      els.cutinFile.value = '';                 // 같은 파일 다시 선택해도 change 가 뜨도록
+      els.cutinFile.click();
+    });
+  }
+
   // ── 이벤트 ───────────────────────────────────────────────────
   // 폴백: collector 가 자동 전달에 실패해 JSON 파일로 떨어진 경우,
   // 페이지 아무 곳에나 그 파일을 끌어다 놓으면 불러온다.
@@ -460,6 +693,13 @@ padding: 16px 16px;
   els.modeText.addEventListener('click', () => setMode('text'));
   els.downloadBtn.addEventListener('click', download);
   els.copyBtn.addEventListener('click', copy);
+  els.cutinBtn.addEventListener('click', toggleInsertMode);
+  els.cutinFile.addEventListener('change', () => {
+    const f = els.cutinFile.files && els.cutinFile.files[0];
+    if (f) addCutin(f);
+  });
+  // 미리보기가 다시 그려질 때마다 스크롤 복원 + 슬롯·삭제 핸들러를 새로 연결한다.
+  els.preview.addEventListener('load', onPreviewLoad);
 
   // ── ccfolia 탭에서 직접 전달받기 (postMessage) ───────────────
   // collector(콘솔/북마클릿)가 ccfolia.com 탭에서 이 페이지를 열고 로그를 넘긴다.

@@ -69,6 +69,8 @@ a#bookmarklet { text-decoration: none; display: inline-block; cursor: grab; }
 }
 .btn:hover { border-color: var(--accent); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+/* 컷인 삽입 모드 on 상태 표시 */
+.btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
 /* 옵션 */
 .options { display: flex; flex-wrap: wrap; gap: 14px 24px; }

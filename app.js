@@ -136,9 +136,16 @@
   }
 
   // ── 필터 적용 ────────────────────────────────────────────────
+  // 본문(대사)이 비어 출력할 게 없는 로그(예: 편집으로 내용이 지워진 메시지)는
+  // 출력에서 통째로 제외한다. 주사위/판정은 굴림 결과가 곧 내용이므로 비어도 남긴다.
+  function isEmptyLog(m) {
+    if (rollInfo(m)) return false;
+    return String(m.text ?? '').trim() === '';
+  }
+
   function filtered() {
     const chans = enabledChannels();
-    return messages.filter(m => chans.has(channelKey(m)));
+    return messages.filter(m => chans.has(channelKey(m)) && !isEmptyLog(m));
   }
 
   // ── 출력 범위(시작 번호 ~ 끝) ────────────────────────────────

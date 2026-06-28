@@ -13,7 +13,11 @@
   let preserveScroll = 0;    // 재렌더 시 유지할 미리보기 스크롤 위치
   let freshLoad = false;     // 새 로그를 받은 직후엔 스크롤을 맨 위로
   const TOP = '__top__';     // 맨 위(첫 메시지 앞) 앵커
-  const MAX_CUTIN_W = 800;   // 이보다 가로가 크면 줄여서 임베드(용량 절감)
+  const MAX_CUTIN_W = 800;   // 폴백 임베드 시, 이보다 가로가 크면 줄임(용량 절감)
+  // ImgBB API 키. 채워 두면 컷인 이미지를 ImgBB 에 올려 '짧은 링크'로 넣어 HTML 이
+  // 가벼워진다(렉 해소). 비워 두면 기존 Base64 임베드로 동작한다.
+  // 발급: https://api.imgbb.com/ → Get API key
+  const IMGBB_API_KEY = '8317470d8f37e2946f33f46be9248d15';
 
   const $ = (sel) => document.querySelector(sel);
 
@@ -327,21 +331,28 @@ ${HR}`;
     const del = opt.preview
       ? `<button type="button" class="cutin-del" data-id="${c.id}" title="컷인 삭제">🗑</button>`
       : '';
+    // 업로드 중이면 자리 표시 박스, 완료되면 이미지(외부 링크일 수 있어 referrer 미전송).
+    const inner = c.uploading
+      ? `<div style="padding: 24px; color: rgb(150, 170, 190); font-size: 14px;">이미지 업로드 중…</div>`
+      : `<img src="${c.src}" alt="컷인" style="max-width: 100%; border-radius: 5px; display: block;" referrerpolicy="no-referrer">`;
     return `    <div class="gap cutin" style="display: flex; justify-content: center; background-color: transparent; position: relative;">
-        ${del}<img src="${c.src}" alt="컷인" style="max-width: 100%; border-radius: 5px; display: block;">
+        ${del}${inner}
     </div>
 ${HR}`;
   }
 
-  // afterId 앵커에 달린 컷인들(삽입 순서 유지)
-  function cutinsFor(anchor) { return cutins.filter(c => c.afterId === anchor); }
+  // afterId 앵커에 달린 컷인들(삽입 순서 유지).
+  // 다운로드(clean)에는 아직 업로드 중인 자리 표시는 포함하지 않는다.
+  function cutinsFor(anchor, opt) {
+    return cutins.filter(c => c.afterId === anchor && (opt.preview || !c.uploading));
+  }
 
   // 메시지 행 + 컷인을 한 줄씩 엮는다.
   // 삽입 모드(preview)에선 슬롯을 일일이 그리지 않고, 각 행에 위/아래 삽입 앵커만
   // 심어 둔다. 실제 파란 띠는 마우스에 가까운 경계 한 곳에만 JS 로 띄운다(가벼움).
   function buildRows(items, opt) {
     const rows = [];
-    cutinsFor(TOP).forEach(c => rows.push(cutinHtml(c, opt)));
+    cutinsFor(TOP, opt).forEach(c => rows.push(cutinHtml(c, opt)));
     let prevMid = TOP;                       // 직전 메시지 _id(맨 위는 TOP)
     for (const m of items) {
       let row = messageHtml(m, opt);
@@ -352,7 +363,7 @@ ${HR}`;
         row = row.replace('<div class="gap"', '<div class="gap"' + attrs);
       }
       rows.push(row);
-      cutinsFor(m._id).forEach(c => rows.push(cutinHtml(c, opt)));
+      cutinsFor(m._id, opt).forEach(c => rows.push(cutinHtml(c, opt)));
       prevMid = m._id;
     }
     return rows.join('\n');
@@ -606,13 +617,49 @@ body.insert-mode .cutin-del{ display: block; }
     });
   }
 
+  // 이미지를 ImgBB 에 올려 링크를 받는다(브라우저 직접 업로드).
+  async function uploadToImgbb(file) {
+    const form = new FormData();
+    form.append('image', file);
+    const res = await fetch('https://api.imgbb.com/1/upload?key=' + encodeURIComponent(IMGBB_API_KEY), {
+      method: 'POST',
+      body: form,
+    });
+    if (!res.ok) throw new Error('ImgBB 업로드 실패 (' + res.status + ')');
+    const j = await res.json();
+    const url = j && j.data && (j.data.url || j.data.display_url);
+    if (!url) throw new Error('ImgBB 응답에 링크가 없습니다.');
+    return url;   // 짧은 https 링크(i.ibb.co/...)
+  }
+
+  // 컷인 src 결정: API 키가 있으면 ImgBB 링크, 실패하거나 없으면 Base64 임베드로 폴백.
+  async function resolveCutinSrc(file) {
+    if (IMGBB_API_KEY) {
+      try { return await uploadToImgbb(file); }
+      catch (e) { console.warn('ImgBB 업로드 실패 — Base64 임베드로 대체합니다.', e); }
+    }
+    return fileToCutinSrc(file);
+  }
+
   function addCutin(file) {
     if (pendingAfterId == null) return;
     const afterId = pendingAfterId;
-    fileToCutinSrc(file)
-      .then(src => { cutins.push({ id: ++cutinSeq, afterId, src }); render(); })
-      .catch(err => alert('이미지를 넣지 못했습니다: ' + err.message))
-      .finally(() => { pendingAfterId = null; });
+    pendingAfterId = null;
+    // 업로드는 시간이 걸리므로 자리 표시용 컷인을 먼저 넣어 진행 상태를 보여준다.
+    const id = ++cutinSeq;
+    cutins.push({ id, afterId, src: '', uploading: true });
+    render();
+    resolveCutinSrc(file)
+      .then(src => {
+        const c = cutins.find(x => x.id === id);
+        if (c) { c.src = src; c.uploading = false; }
+        render();
+      })
+      .catch(err => {
+        cutins = cutins.filter(x => x.id !== id);   // 실패한 자리 표시는 제거
+        render();
+        alert('이미지를 넣지 못했습니다: ' + err.message);
+      });
   }
 
   function removeCutin(id) {

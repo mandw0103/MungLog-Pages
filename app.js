@@ -270,10 +270,9 @@ ${HR}`;
       ? `<img src="${escapeHtml(m.iconUrl)}" alt="${escapeHtml(m.name || '')}" style="width: 40px; height: 40px; object-fit: cover; object-position: top center; border-radius: 5px;" referrerpolicy="no-referrer">`
       : '';
 
-    // <b> 영역: 시간 / 비밀 / 수정 표시
+    // <b> 영역: 시간 표시
     const bParts = [];
     if (opt.time && m.createdAt) bParts.push(` - ${escapeHtml(fmtTime(m.createdAt))}`);
-    if (m.edited) bParts.push(' (수정됨)');
     const bTag = bParts.length ? `<b>${bParts.join('')}</b>` : '';
 
     // 판정 키워드가 없는 주사위(예: 데미지 굴림)는 명령+결과를 본문으로 표시

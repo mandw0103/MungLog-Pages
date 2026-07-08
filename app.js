@@ -227,16 +227,18 @@
   // ── HTML 생성 (ccfolia 스킨 포맷) ────────────────────────────
   const textToHtml = (s) => escapeHtml(s).replace(/\n/g, '<br>');
 
-  const HR = `    <hr style="margin: 0; padding: 0; border: 0; flex-shrink: 0; border-top: 1px solid rgba(255, 255, 255, 0.08);">`;
+  const HR = `    <hr style="margin: 0 16px; padding: 0; border: 0; flex-shrink: 0; border-top: 1px solid rgba(255, 255, 255, 0.08);">`;
 
-  // 판정 결과 키워드별 스타일 (대성공 > 대실패)
+  // 판정 결과 키워드별 스타일.
+  // 성공 = 초록 계열(등급 높을수록 더 밝고 선명), 실패 = 빨강 계열.
+  // 대성공·대실패는 글로우(text-shadow)로 크리티컬/펌블을 강조한다.
   const RESULT_STYLES = {
-    '대성공': 'color: rgb(255, 215, 0); font-size: 15px; font-weight: bold; text-shadow: rgba(255, 215, 0, 0.8) 0px 0px 5px;',
-    '대단한 성공': 'color: rgb(255, 165, 0); font-size: 15px; font-weight: bold;',
-    '어려운 성공': 'color: rgb(30, 144, 255); font-size: 15px; font-weight: bold;',
-    '보통 성공': 'color: rgb(50, 205, 50); font-size: 15px; font-weight: bold;',
-    '실패': 'color: rgb(255, 96, 78); font-size: 15px; font-weight: bold;',
-    '대실패': 'color: red; font-size: 15px; font-weight: bold;',
+    '대성공': 'color: #56FC9A; font-size: 15px; font-weight: bold; text-shadow: rgba(86, 252, 154, 0.8) 0px 0px 5px;',
+    '대단한 성공': 'color: #00FE02; font-size: 15px; font-weight: bold;',
+    '어려운 성공': 'color: #00DC00; font-size: 15px; font-weight: bold;',
+    '보통 성공': 'color: #009A00; font-size: 15px; font-weight: bold;',
+    '실패': 'color: #CE0004; font-size: 15px; font-weight: bold;',
+    '대실패': 'color: rgb(255, 45, 45); font-size: 15px; font-weight: bold; text-shadow: rgba(255, 45, 45, 0.85) 0px 0px 6px;',
   };
 
   // 주사위 굴림 정보 추출. extend.roll 이 있으면 판정 메시지로 본다.
@@ -251,15 +253,19 @@
     return { full, outcome };
   }
 
-  // 판정(주사위) 메시지 — 검은 알약 + 결과별 색상
-  function judgementHtml(m, roll) {
+  // 판정(주사위) 메시지 — 다른 로그와 통일된 좌측 정렬 레이아웃.
+  // 아바타 자리엔 "판정" 박스(정보 탭과 동일 형태), 이름은 메인 대사처럼 표기,
+  // 본문(명령+굴림결과)은 결과 키워드별 색상으로 강조한다.
+  function judgementHtml(m, roll, opt) {
     const nameColor = safeColor(m.color) || 'rgb(136, 136, 136)';
     const resultStyle = RESULT_STYLES[roll.outcome] || 'color: rgb(221, 221, 221); font-size: 15px; font-weight: bold;';
-    return `    <div class="gap" style="display: flow-root; background-color: transparent;">
-
-        <p style="color: rgb(221, 221, 221); padding-left: 0px; display: flow-root; font-style: italic; font-weight: bold; text-align: center; margin: 8px;">
-        <span></span> <span style="color: ${nameColor};"></span><span></span> <span style=" background: black; color: white; display: inline-block; padding: 5px 15px; border-radius: 20px; font-size: 14px; font-weight: bold;text-align: center;">
-            ${escapeHtml(m.name || '이름없음')} - 판정 </span><span style="${resultStyle}"> ${textToHtml(roll.full)}</span>
+    const timeTag = (opt && opt.time && m.createdAt) ? `<b> - ${escapeHtml(fmtTime(m.createdAt))}</b>` : '';
+    return `    <div class="gap" style="display: flex; background-color: transparent;">
+        <div class="msg_container"><div style="width: 40px; height: 40px; background: #4d4d4d; border-radius: 0; display: flex; align-items: center; justify-content: center;">
+                        <span style="color: #8d8d8d; font-size: 14px;"> 판정 </span>
+                      </div></div>
+        <p style="color: rgb(221, 221, 221);">
+        <span></span> <span style="color: ${nameColor}; font-weight: bold;">${escapeHtml(m.name || '이름없음')}</span>${timeTag}<span> <br> </span><span style="${resultStyle}"> ${textToHtml(roll.full)} </span>
       </p>
     </div>
 ${HR}`;
@@ -267,8 +273,8 @@ ${HR}`;
 
   // 정보(info) 탭 메시지 — 아바타 대신 "정보" 박스 + 본문만 출력
   function infoHtml(m) {
-    return `    <div class="gap" style="display: flex; background-color: #464646;">
-        <div class="msg_container"><div style="width: 40px; height: 40px; background: #4d4d4d; border-radius: 5px; display: flex; align-items: center; justify-content: center;">
+    return `    <div class="gap" style="display: flex; align-items: center; background-color: #464646;">
+        <div class="msg_container"><div style="width: 40px; height: 40px; background: #4d4d4d; border-radius: 0; display: flex; align-items: center; justify-content: center;">
                         <span style="color: #8d8d8d; font-size: 14px;"> 정보 </span>
                       </div></div>
         <p style="color: rgb(157, 157, 157);">
@@ -282,9 +288,9 @@ ${HR}`;
   function systemHtml(m, opt) {
     const timeTag = (opt.time && m.createdAt) ? `<b> - ${escapeHtml(fmtTime(m.createdAt))}</b>` : '';
     return `    <div class="gap" style="display: flex; background-color: transparent;">
-        <div class="msg_container"><img style="width: 40px; border-radius: 5px;"></div>
+        <div class="msg_container"><img style="width: 40px; border-radius: 0;"></div>
         <p style="color: rgb(221, 221, 221);">
-        <span></span> <span style="color: rgb(136, 136, 136); font-weight: bold;">${escapeHtml(m.name || 'system')}</span>${timeTag}<span> <br> </span><span> ${textToHtml(m.text || '')} </span>
+        <span></span> <span style="color: rgb(136, 136, 136); font-weight: bold;">${escapeHtml(m.name || 'system')}</span>${timeTag}<span> <br> </span><span style="font-weight: bold;"> ${textToHtml(m.text || '')} </span>
       </p>
     </div>
 ${HR}`;
@@ -298,12 +304,13 @@ ${HR}`;
 
     const roll = rollInfo(m);
     // 판정 결과 키워드가 잡히면 판정 전용 포맷으로 출력
-    if (roll && roll.outcome) return judgementHtml(m, roll);
+    if (roll && roll.outcome) return judgementHtml(m, roll, opt);
 
+    // 메인 탭 메시지
     const nameColor = safeColor(m.color) || 'rgb(136, 136, 136)';
 
     const icon = m.iconUrl
-      ? `<img src="${escapeHtml(m.iconUrl)}" alt="${escapeHtml(m.name || '')}" style="width: 40px; height: 40px; object-fit: cover; object-position: top center; border-radius: 5px;" referrerpolicy="no-referrer">`
+      ? `<img src="${escapeHtml(m.iconUrl)}" alt="${escapeHtml(m.name || '')}" style="width: 40px; height: 40px; object-fit: cover; object-position: top center; border-radius: 0;" referrerpolicy="no-referrer">`
       : '';
 
     // <b> 영역: 시간 표시
@@ -311,13 +318,15 @@ ${HR}`;
     if (opt.time && m.createdAt) bParts.push(` - ${escapeHtml(fmtTime(m.createdAt))}`);
     const bTag = bParts.length ? `<b>${bParts.join('')}</b>` : '';
 
-    // 판정 키워드가 없는 주사위(예: 데미지 굴림)는 명령+결과를 본문으로 표시
+    // 판정 키워드가 없는 주사위(예: 데미지 굴림)는 명령+결과를 본문으로 표시.
+    // 주사위 본문은 판정처럼 볼드 처리하고, 일반 대사는 기본 굵기로 둔다.
     const body = roll ? roll.full : (m.text || '');
+    const bodyStyle = roll ? ' style="font-weight: bold;"' : '';
 
     return `    <div class="gap" style="display: flex; background-color: transparent;">
         <div class="msg_container">${icon}</div>
         <p style="color: rgb(221, 221, 221);">
-        <span></span> <span style="color: ${nameColor}; font-weight: bold;">${escapeHtml(m.name || '이름없음')}</span>${bTag}<span> <br> </span><span> ${textToHtml(body)} </span>
+        <span></span> <span style="color: ${nameColor}; font-weight: bold;">${escapeHtml(m.name || '이름없음')}</span>${bTag}<span> <br> </span><span${bodyStyle}> ${textToHtml(body)} </span>
       </p>
     </div>
 ${HR}`;
@@ -413,20 +422,18 @@ p{
   margin: 0;
 }
 
-b{
-  color: gray;
-    font-size: 9pt;
-    font-weight: 200;
-}
-
-  span, b {
-    font-size: 16px;
-    font-family: 'Arial', sans-serif;
+  span {
+    font-size: 14px;
+    font-family: "Roboto", "Helvetica", "Arial", sans-serif;
     line-height: 1.5;
   }
 
+  /* 시간(caption): 이름 옆 회색 소형 텍스트 */
   b {
-    font-weight: bold;
+    color: #757575;
+    font-size: 12px;
+    font-weight: 400;
+    font-family: "Roboto", "Helvetica", "Arial", sans-serif;
   }
 
 .ccfolia_wrap {
@@ -441,7 +448,7 @@ b{
   height: 40px;
   overflow: hidden;
   background: rgba(0, 0, 0, 0.2);
-  border-radius: 5px;
+  border-radius: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -457,7 +464,7 @@ span:before {
 
 
 .gap{
-gap: 15px;
+gap: 16px;
 display: flex;
 -webkit-box-pack: start;
 justify-content: flex-start;

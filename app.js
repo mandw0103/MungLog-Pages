@@ -33,6 +33,16 @@
     markImgbbAsked();
   }
 
+  // ── 출력 색상(배경·글자) ─────────────────────────────────────
+  // 고른 색은 localStorage 에 저장해 재방문 시에도 유지한다(테마·ImgBB 키와 동일 패턴).
+  // 기본값은 출력 CSS 의 폴백(--log-bg/--log-fg)과 같은 값이어야 '기본' 상태가 정확히 일치한다.
+  const LOG_BG_LS = 'trpglog-log-bg';
+  const LOG_FG_LS = 'trpglog-log-fg';
+  const LOG_FG2_LS = 'trpglog-log-fg2';   // 글자2: 아바타 안 글자·날짜/시각·정보 탭 내용
+  const LOG_BG_DEFAULT = '#474747';
+  const LOG_FG_DEFAULT = '#dddddd';
+  const LOG_FG2_DEFAULT = '#9d9d9d';       // 정보 탭 원래 색(rgb 157) — 셋을 이 톤으로 통일
+
   const $ = (sel) => document.querySelector(sel);
 
   const els = {
@@ -40,6 +50,10 @@
     optionsPanel: $('#optionsPanel'),
     outputPanel: $('#outputPanel'),
     optTime: $('#optTime'),
+    optBg: $('#optBg'),
+    optFg: $('#optFg'),
+    optFg2: $('#optFg2'),
+    resetColors: $('#resetColors'),
     optStart: $('#optStart'),
     totalCount: $('#totalCount'),
     rangeInfo: $('#rangeInfo'),
@@ -78,6 +92,17 @@
   const safeColor = (c) => {
     const v = String(c ?? '').trim();
     return /^(#[0-9a-fA-F]{3,8}|rgba?\([\d.,\s%]+\)|[a-zA-Z]+)$/.test(v) ? v : '';
+  };
+
+  // 헥사(#rgb·#rrggbb)를 반투명 rgba 로 바꾼다(구분선을 글자2 색의 옅은 버전으로 쓰기 위함).
+  // 색상 팔레트 값은 항상 #rrggbb 라 파싱되며, 아니면 null 을 돌려 호출부가 기본선으로 폴백한다.
+  const hexToRgba = (hex, a) => {
+    const m = /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.exec(String(hex ?? '').trim());
+    if (!m) return null;
+    let h = m[1];
+    if (h.length === 3) h = h.split('').map(c => c + c).join('');
+    const n = parseInt(h, 16);
+    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
   };
 
   const fmtTime = (iso) => {
@@ -263,7 +288,7 @@
   // ── HTML 생성 (ccfolia 스킨 포맷) ────────────────────────────
   const textToHtml = (s) => escapeHtml(s).replace(/\n/g, '<br>');
 
-  const HR = `    <hr style="margin: 0 16px; padding: 0; border: 0; flex-shrink: 0; border-top: 1px solid rgba(255, 255, 255, 0.08);">`;
+  const HR = `    <hr style="margin: 0 16px; padding: 0; border: 0; flex-shrink: 0; border-top: 1px solid var(--log-line, rgba(255, 255, 255, 0.08));">`;
 
   // 판정 결과 키워드별 스타일.
   // 성공 = 초록 계열(등급 높을수록 더 밝고 선명), 실패 = 빨강 계열.
@@ -297,10 +322,10 @@
     const resultStyle = RESULT_STYLES[roll.outcome] || 'color: rgb(221, 221, 221); font-size: 15px; font-weight: bold;';
     const timeTag = (opt && opt.time && m.createdAt) ? `<b> - ${escapeHtml(fmtTime(m.createdAt))}</b>` : '';
     return `    <div class="gap" style="display: flex; background-color: transparent;">
-        <div class="msg_container"><div style="width: 40px; height: 40px; background: #4d4d4d; border-radius: 0; display: flex; align-items: center; justify-content: center;">
-                        <span style="color: #8d8d8d; font-size: 14px;"> 판정 </span>
+        <div class="msg_container"><div style="width: 40px; height: 40px; background: transparent; border-radius: 0; display: flex; align-items: center; justify-content: center;">
+                        <span style="color: var(--log-fg2, #8d8d8d); font-size: 14px;"> 판정 </span>
                       </div></div>
-        <p style="color: rgb(221, 221, 221);">
+        <p style="color: var(--log-fg, rgb(221, 221, 221));">
         <span></span> <span style="color: ${nameColor}; font-weight: bold;">${escapeHtml(m.name || '이름없음')}</span>${timeTag}<span> <br> </span><span style="${resultStyle}"> ${textToHtml(roll.full)} </span>
       </p>
     </div>
@@ -309,23 +334,25 @@ ${HR}`;
 
   // 정보(info) 탭 메시지 — 아바타 대신 "정보" 박스 + 본문만 출력
   function infoHtml(m) {
-    return `    <div class="gap" style="display: flex; align-items: center; background-color: #464646;">
-        <div class="msg_container"><div style="width: 40px; height: 40px; background: #4d4d4d; border-radius: 0; display: flex; align-items: center; justify-content: center;">
-                        <span style="color: #8d8d8d; font-size: 14px;"> 정보 </span>
+    return `    <div class="gap" style="display: flex; align-items: center; background-color: transparent;">
+        <div class="msg_container"><div style="width: 40px; height: 40px; background: transparent; border-radius: 0; display: flex; align-items: center; justify-content: center;">
+                        <span style="color: var(--log-fg2, #8d8d8d); font-size: 14px;"> 정보 </span>
                       </div></div>
-        <p style="color: rgb(157, 157, 157);">
+        <p style="color: var(--log-fg2, rgb(157, 157, 157));">
         <span></span> <span style="color: rgb(136, 136, 136);"></span><span> ${textToHtml(m.text || '')} </span>
       </p>
     </div>
 ${HR}`;
   }
 
-  // 시스템 메시지 — 빈 아바타 자리 + "system" 이름 + 본문
+  // 시스템 메시지 — 아바타 자리에 "시스템" 박스(판정·정보와 동일 형태) + "system" 이름 + 본문
   function systemHtml(m, opt) {
     const timeTag = (opt.time && m.createdAt) ? `<b> - ${escapeHtml(fmtTime(m.createdAt))}</b>` : '';
     return `    <div class="gap" style="display: flex; background-color: transparent;">
-        <div class="msg_container"><img style="width: 40px; border-radius: 0;"></div>
-        <p style="color: rgb(221, 221, 221);">
+        <div class="msg_container"><div style="width: 40px; height: 40px; background: transparent; border-radius: 0; display: flex; align-items: center; justify-content: center;">
+                        <span style="color: var(--log-fg2, #8d8d8d); font-size: 12px;">시스템</span>
+                      </div></div>
+        <p style="color: var(--log-fg, rgb(221, 221, 221));">
         <span></span> <span style="color: rgb(136, 136, 136); font-weight: bold;">${escapeHtml(m.name || 'system')}</span>${timeTag}<span> <br> </span><span style="font-weight: bold;"> ${textToHtml(m.text || '')} </span>
       </p>
     </div>
@@ -361,7 +388,7 @@ ${HR}`;
 
     return `    <div class="gap" style="display: flex; background-color: transparent;">
         <div class="msg_container">${icon}</div>
-        <p style="color: rgb(221, 221, 221);">
+        <p style="color: var(--log-fg, rgb(221, 221, 221));">
         <span></span> <span style="color: ${nameColor}; font-weight: bold;">${escapeHtml(m.name || '이름없음')}</span>${bTag}<span> <br> </span><span${bodyStyle}> ${textToHtml(body)} </span>
       </p>
     </div>
@@ -434,17 +461,25 @@ ${HR}`;
     const bandEl = opt.preview ? '<div id="cutin-band">+ 여기에 컷인 삽입</div>' : '';
     // 순서 바꾸기 드래그 중 삽입 위치를 보여주는 가로선(미리보기 전용, JS 가 위치를 옮긴다)
     const lineEl = opt.preview ? '<div id="reorder-line"></div>' : '';
-    // 미리보기는 사이트 테마(어두운/밝은)에 맞춰 배경·스크롤바를 통일한다.
-    // 다운로드 HTML(preview=false)에는 넣지 않아 ccfolia 스킨 원본을 유지한다.
+    // 사용자가 고른 배경·글자 색(--log-bg/--log-fg)을 :root 에 심어 로그 전체에 적용.
+    // input[type=color] 값은 항상 #rrggbb 지만, 방어적으로 safeColor 로 걸러 기본값으로 보정.
+    const logBg = safeColor(els.optBg && els.optBg.value) || '#474747';
+    const logFg = safeColor(els.optFg && els.optFg.value) || '#dddddd';
+    const logFg2 = safeColor(els.optFg2 && els.optFg2.value) || '#9d9d9d';
+    // 구분선(HR)은 글자2 색을 옅게(알파 0.25) 깐다 — 불투명 글자2면 선이 너무 진해지므로.
+    const logLine = hexToRgba(logFg2, 0.25) || 'rgba(255, 255, 255, 0.08)';
+    const colorVars = `\n:root { --log-bg: ${logBg}; --log-fg: ${logFg}; --log-fg2: ${logFg2}; --log-line: ${logLine}; }`;
+    // 미리보기는 사이트 테마(어두운/밝은)에 맞춰 바깥 여백·스크롤바를 통일하고,
+    // 다운로드 HTML 은 페이지 전체를 고른 배경색으로 채워(여백 없이) 자기완결로 만든다.
     const themeChrome = opt.preview
       ? `\n:root { color-scheme: ${(view && view.theme) === 'light' ? 'light' : 'dark'}; }\nhtml, body { background: ${(view && view.bg) || '#2c2c2c'}; }`
-      : '';
+      : `\nhtml, body { background: var(--log-bg, #474747); }`;
     return `
     <html>
       <head>
       <meta charset="UTF-8">
         <style>
-${OUTPUT_CSS}${extraCss}${themeChrome}
+${OUTPUT_CSS}${extraCss}${colorVars}${themeChrome}
         </style>
       </head>
       <body>
@@ -473,7 +508,7 @@ p{
 
   /* 시간(caption): 이름 옆 회색 소형 텍스트 */
   b {
-    color: #757575;
+    color: var(--log-fg2, #757575);
     font-size: 12px;
     font-weight: 400;
     font-family: "Roboto", "Helvetica", "Arial", sans-serif;
@@ -482,8 +517,9 @@ p{
 .ccfolia_wrap {
   position: relative;
   padding: 10px !important;
-  background-color: #474747;   /* 불투명 — 테마별 backdrop 이 비쳐 색이 달라지지 않게 */
-  color: #fefefe;
+  /* 배경·글자 색은 사용자가 고른 값(--log-bg/--log-fg)을 따르고, 없으면 기본값. */
+  background-color: var(--log-bg, #474747);   /* 불투명 — 테마별 backdrop 이 비쳐 색이 달라지지 않게 */
+  color: var(--log-fg, #dddddd);
 }
 .msg_container {
   flex-shrink: 0;
@@ -1164,6 +1200,32 @@ body.reorder-mode .reorder-handle{ display: block; }
     doc.addEventListener('pointercancel', endDrag);
   }
 
+  // ── 출력 색상 적용/저장 ──────────────────────────────────────
+  const readLS = (k, def) => { try { return localStorage.getItem(k) || def; } catch (e) { return def; } };
+  // 저장된 색을 색상 선택기에 채운다(없으면 기본값). 첫 렌더 전에 한 번 호출한다.
+  function initColors() {
+    els.optBg.value = readLS(LOG_BG_LS, LOG_BG_DEFAULT);
+    els.optFg.value = readLS(LOG_FG_LS, LOG_FG_DEFAULT);
+    els.optFg2.value = readLS(LOG_FG2_LS, LOG_FG2_DEFAULT);
+  }
+  // 색을 바꾸면 저장하고 다시 그린다(미리보기·다운로드용 HTML 모두 새 색으로 갱신).
+  // 색상 팔레트(input[type=color]) 값은 항상 핵사(#rrggbb)라 색상 형식은 헥사만 쓰인다.
+  function onColorChange() {
+    try {
+      localStorage.setItem(LOG_BG_LS, els.optBg.value);
+      localStorage.setItem(LOG_FG_LS, els.optFg.value);
+      localStorage.setItem(LOG_FG2_LS, els.optFg2.value);
+    } catch (e) { /* ignore */ }
+    render();
+  }
+  function resetColors() {
+    els.optBg.value = LOG_BG_DEFAULT;
+    els.optFg.value = LOG_FG_DEFAULT;
+    els.optFg2.value = LOG_FG2_DEFAULT;
+    onColorChange();
+  }
+  initColors();
+
   // ── 이벤트 ───────────────────────────────────────────────────
   // 폴백: collector 가 자동 전달에 실패해 JSON 파일로 떨어진 경우,
   // 페이지 아무 곳에나 그 파일을 끌어다 놓으면 불러온다.
@@ -1176,6 +1238,11 @@ body.reorder-mode .reorder-handle{ display: block; }
   });
 
   [els.optTime].forEach(c => c.addEventListener('change', render));
+  // 색상 선택기: 드래그로 색을 고르는 동안에도 즉시 반영되도록 input 이벤트 사용.
+  els.optBg.addEventListener('input', onColorChange);
+  els.optFg.addEventListener('input', onColorChange);
+  els.optFg2.addEventListener('input', onColorChange);
+  els.resetColors.addEventListener('click', resetColors);
   els.optStart.addEventListener('input', render);
   els.searchBtn.addEventListener('click', searchDialogue);
   els.searchText.addEventListener('keydown', (e) => { if (e.key === 'Enter') searchDialogue(); });

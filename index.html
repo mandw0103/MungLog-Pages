@@ -92,6 +92,13 @@
     <section class="panel" id="outputPanel" hidden>
       <div class="output-head">
         <h2>❸ 결과</h2>
+      </div>
+      <div class="colors">
+        <label class="color-opt">배경 <input type="color" id="optBg" class="color-in" value="#474747"></label>
+        <label class="color-opt">글자 <input type="color" id="optFg" class="color-in" value="#dddddd"></label>
+        <label class="color-opt" title="아바타 안 글자·날짜/시각·정보 탭 색상">글자2 <input type="color" id="optFg2" class="color-in" value="#9d9d9d"></label>
+        <button type="button" id="resetColors" class="btn outline" title="기본 배경·글자 색으로 되돌리기">기본값</button>
+        <!-- 컷인 삽입·순서 바꾸기·복사·다운로드 — 색상 선택 줄 오른쪽에 정렬 -->
         <div class="actions">
           <!-- 컷인 삽입 + 편집(ImgBB 키 설정) — 한 버튼처럼 보이는 분할 버튼 -->
           <span id="cutinBtn" class="btn outline split-btn">

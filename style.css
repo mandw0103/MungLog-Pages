@@ -183,9 +183,11 @@ a#bookmarklet.dragging {
 #cutinBtn,
 #reorderToggle,
 #copyBtn,
+#resetColors,
 #imgbbClearBtn { border-color: var(--strong); color: var(--strong); }
 #searchBtn:hover,
 #copyBtn:hover,
+#resetColors:hover,
 #imgbbClearBtn:hover { background: var(--strong); border-color: var(--strong); color: var(--bg); }
 /* 순서 바꾸기 버튼 — hover, 그리고 모드 ON(.active) 이면 --strong 으로 채운다 */
 #reorderToggle:hover,
@@ -284,6 +286,36 @@ a#bookmarklet.dragging {
   color: var(--accent);
   font-weight: 700;
 }
+/* 출력 색상(배경·글자) 선택 — 결과 제목과 미리보기 사이에 놓인다 */
+.colors { margin: 0 0 14px; display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; }
+.color-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+/* 색상 팔레트 스와치 — 버튼(.btn.outline)과 같은 높이·라운드로 맞춘다.
+   테두리는 연한 --border 로 두고(스와치 색이 주인공), hover 시 --accent 로 바뀐다.
+   값은 항상 핵사(#rrggbb)라 색상 형식은 헥사만 쓰인다. */
+.color-in {
+  width: 46px;
+  height: 36px;                  /* .btn(패딩 8px + 0.95rem·1.2 + 1px 테두리)과 같은 높이 */
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  transition: border-color .15s;
+}
+.color-in:hover { border-color: var(--accent); }
+.color-in::-webkit-color-swatch-wrapper { padding: 4px; }
+.color-in::-webkit-color-swatch { border: 0; border-radius: 5px; }
+.color-in::-moz-color-swatch { border: 0; border-radius: 5px; }
+/* 액션 버튼(컷인 삽입·순서 바꾸기·복사·다운로드)은 색상 줄 오른쪽으로 민다 */
+.colors .actions { margin-left: auto; }
+
 .channels { margin-top: 16px; }
 /* "채널 필터" 라벨 — 활성 탭과 같은 스타일(흰색 볼드 + 빨간 밑줄) */
 .channels-label {

@@ -3,22 +3,52 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>코코포리아 변환기</title>
+  <title>코코포리아 로그 변환기</title>
   <link rel="icon" type="image/png" href="icon.png">
   <link rel="stylesheet" href="style.css">
+  <!-- 테마 초기 적용(깜빡임 방지) + 토글. 저장된 값이 없으면 시스템 설정을 따른다. -->
+  <script>
+    (function () {
+      var KEY = 'trpglog-theme';
+      var root = document.documentElement;
+      function stored() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
+      function system() { return window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'; }
+      // knob 위치는 CSS(data-theme)가 처리하고, 여기선 설명·상태만 갱신한다.
+      function paint() {
+        var btn = document.getElementById('themeToggle');
+        if (!btn) return;
+        var isLight = root.dataset.theme === 'light';
+        btn.title = isLight ? '어두운 모드로 전환' : '밝은 모드로 전환';
+        btn.setAttribute('aria-label', btn.title);
+        btn.setAttribute('aria-checked', isLight ? 'true' : 'false');
+      }
+      root.dataset.theme = stored() || system();   // <body> 그리기 전에 즉시 적용
+      window.__toggleTheme = function () {
+        root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+        try { localStorage.setItem(KEY, root.dataset.theme); } catch (e) {}
+        paint();
+      };
+      document.addEventListener('DOMContentLoaded', paint);
+    })();
+  </script>
 </head>
 <body>
   <header class="site-header">
-    <h1>코코포리아 변환기</h1>
+    <div class="header-inner">
+      <h1>코코포리아 로그 변환기</h1>
+      <button type="button" id="themeToggle" class="theme-switch" role="switch" onclick="__toggleTheme()">
+        <span class="ts-knob"></span>
+      </button>
+    </div>
   </header>
 
   <main>
     <section class="panel">
-      <h2>1. 로그 가져오기</h2>
+      <h2>❶ 로그 가져오기</h2>
 
       <div class="get-method">
-        <p>아래 <strong>"코코포리아 로그 가져오기"</strong> 버튼을 <strong>북마크바로 드래그</strong>해 한 번 등록하세요.
-           이후 ccfolia 방 화면에서 그 북마크를 누르면, 이 변환기로 로그가 바로 들어옵니다.</p>
+        <p>아래 <strong>코코포리아 로그 가져오기</strong> 버튼을 <strong>북마크바로 드래그</strong>해 한 번 등록하세요.
+        <br>이후 ccfolia 방 화면에서 그 북마크를 누르면, 이 변환기로 로그가 바로 들어옵니다.</p>
         <p>
           <a id="bookmarklet" class="btn primary" href="javascript:void 0" draggable="true"
              onclick="alert('이 버튼은 클릭하지 말고 북마크바로 드래그해 등록하세요.\n등록 후 ccfolia 방 화면에서 그 북마크를 누르면 됩니다.'); return false;">코코포리아 로그 가져오기</a>
@@ -30,16 +60,16 @@
     </section>
 
     <section class="panel" id="optionsPanel" hidden>
-      <h2>2. 옵션</h2>
+      <h2>❷ 옵션</h2>
       <div class="options">
         <label class="opt"><input type="checkbox" id="optTime" checked> 시간 표시</label>
       </div>
       <div class="channels">
-        <span class="channels-label">채널 필터:</span>
+        <span class="channels-label">채널 필터</span>
         <div id="channelList" class="channel-list"></div>
       </div>
       <div class="range-mode">
-        <div class="toggle">
+        <div class="toggle" id="modeToggle">
           <button type="button" id="modeNum" class="toggle-btn active">로그 갯수로 이어 출력</button>
           <button type="button" id="modeText" class="toggle-btn">대사로 이어 출력</button>
         </div>
@@ -50,9 +80,8 @@
         </div>
 
         <div class="search" id="rangeText" hidden>
-          <span class="search-label">대사로 찾기:</span>
           <input type="text" id="searchText" class="text-in" placeholder="대사 전체를 정확히 입력">
-          <button type="button" id="searchBtn" class="btn">이 대사 다음부터 출력</button>
+          <button type="button" id="searchBtn" class="btn outline">이 대사 다음부터 출력</button>
           <span id="searchInfo" class="search-info"></span>
         </div>
 
@@ -62,14 +91,14 @@
 
     <section class="panel" id="outputPanel" hidden>
       <div class="output-head">
-        <h2>3. 결과</h2>
+        <h2>❸ 결과</h2>
         <div class="actions">
-          <button type="button" id="cutinBtn" class="btn">컷인 삽입</button>
-          <button type="button" id="copyBtn" class="btn">HTML 복사</button>
+          <button type="button" id="cutinBtn" class="btn outline">컷인 삽입</button>
+          <button type="button" id="copyBtn" class="btn outline">HTML 복사</button>
           <button type="button" id="downloadBtn" class="btn primary">HTML 다운로드</button>
         </div>
       </div>
-      <p id="cutinHint" class="hint" hidden>미리보기에서 로그 경계에 마우스를 가져가면 <strong>파란 줄</strong>이 나타납니다.
+      <p id="cutinHint" class="hint" hidden>미리보기에서 로그 경계에 마우스를 가져가면 <strong>빨간 줄</strong>이 나타납니다.
          원하는 위치에서 클릭해 이미지를 넣으세요. 컷인 위의 <strong>🗑</strong> 로 삭제합니다. 큰 이미지는 자동으로 줄여 저장됩니다.</p>
       <input type="file" id="cutinFile" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
       <iframe id="preview" title="미리보기"></iframe>

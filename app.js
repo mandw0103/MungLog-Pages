@@ -34,6 +34,7 @@
     searchInfo: $('#searchInfo'),
     modeNum: $('#modeNum'),
     modeText: $('#modeText'),
+    modeToggle: $('#modeToggle'),
     rangeNum: $('#rangeNum'),
     rangeText: $('#rangeText'),
     channelList: $('#channelList'),
@@ -96,7 +97,7 @@
 
   function onLoaded() {
     els.loadInfo.hidden = false;
-    els.loadInfo.textContent = `총 ${messages.length}건 로드됨${roomId ? ` (방: ${roomId})` : ''}`;
+    els.loadInfo.textContent = `→총 ${messages.length}건 로드${roomId ? ` (방: ${roomId})` : ''}`;
     // 새 로그를 받으면 출력 범위·검색 상태를 처음으로 되돌린다.
     els.optStart.value = '1';
     els.searchText.value = '';
@@ -105,6 +106,7 @@
     buildChannelFilter();
     els.optionsPanel.hidden = false;
     els.outputPanel.hidden = false;
+    updateModeIndicator();   // 패널이 보이게 된 뒤 밑줄 위치를 잡는다
     freshLoad = true;   // 새 로그는 맨 위부터 보여준다(스크롤 복원 건너뜀)
     render();
   }
@@ -199,12 +201,12 @@
     const matches = [];
     all.forEach((m, i) => { if (String(m.text ?? '') === q) matches.push(i); });
     if (!matches.length) {
-      setSearchInfo('일치하는 대사가 없습니다.', 'err');
+      setSearchInfo('일치하는 대사가 없습니다.', '');   // hint 와 같은 색(muted)으로 안내
       return;
     }
     const idx = matches[0];                 // 첫 번째 일치 대사
     els.optStart.value = String(idx + 2);   // 그 대사 '다음'부터(1-based)
-    setSearchInfo('일치하는 대사를 찾았습니다.', 'ok');
+    setSearchInfo('', '');                  // 일치하면 별도 안내 없이 바로 반영
     render();
   }
 
@@ -222,6 +224,16 @@
     els.rangeText.hidden = !isText;
     els.modeNum.classList.toggle('active', !isText);
     els.modeText.classList.toggle('active', isText);
+    updateModeIndicator();
+  }
+
+  // 밑줄(::after)의 너비·위치를 활성 탭에 맞춰 CSS 변수로 넘긴다(슬라이드는 CSS 가 처리).
+  // 옵션 패널이 숨겨져 있으면 측정이 0 이므로, 보일 때(onLoaded) 다시 호출한다.
+  function updateModeIndicator() {
+    const active = els.modeText.classList.contains('active') ? els.modeText : els.modeNum;
+    if (!active.offsetParent && !active.offsetWidth) return;   // 아직 안 보임 → 건너뜀
+    els.modeToggle.style.setProperty('--ind-w', active.offsetWidth + 'px');
+    els.modeToggle.style.setProperty('--ind-x', active.offsetLeft + 'px');
   }
 
   // ── HTML 생성 (ccfolia 스킨 포맷) ────────────────────────────
@@ -342,7 +354,7 @@ ${HR}`;
       : '';
     // 업로드 중이면 자리 표시 박스, 완료되면 이미지(외부 링크일 수 있어 referrer 미전송).
     const inner = c.uploading
-      ? `<div style="padding: 24px; color: rgb(150, 170, 190); font-size: 14px;">이미지 업로드 중…</div>`
+      ? `<div style="padding: 24px; color: rgb(200, 160, 175); font-size: 14px;">이미지 업로드 중…</div>`
       : `<img src="${c.src}" alt="컷인" style="max-width: 100%; border-radius: 5px; display: block;" referrerpolicy="no-referrer">`;
     return `    <div class="gap cutin" style="display: flex; justify-content: center; background-color: transparent; position: relative;">
         ${del}${inner}
@@ -495,14 +507,14 @@ body.insert-mode .ccfolia_wrap{ cursor: pointer; }
   pointer-events: none;
   box-sizing: border-box;
   text-align: center;
-  color: rgb(210, 235, 255);
+  color: rgb(255, 205, 222);
   font-size: 13px;
   padding: 6px;
-  border: 1px dashed rgb(120, 170, 255);
+  border: 1px dashed rgb(232, 92, 140);
   border-radius: 6px;
-  background: rgba(120, 160, 210, 0.18);
+  background: rgba(220, 0, 78, 0.18);
 }
-body.insert-mode .cutin{ outline: 1px dashed rgba(120, 160, 210, 0.45); outline-offset: -4px; }
+body.insert-mode .cutin{ outline: 1px dashed rgba(220, 0, 78, 0.45); outline-offset: -4px; }
 .cutin-del{
   display: none;
   position: absolute;
@@ -752,6 +764,12 @@ body.insert-mode .cutin-del{ display: block; }
     const f = els.cutinFile.files && els.cutinFile.files[0];
     if (f) addCutin(f);
   });
+  // 북마클릿 버튼: 북마크바로 끌어당기는 동안엔 :hover 가 유지되지 않을 수 있어
+  // dragstart/dragend 로 .dragging 을 붙였다 떼어 그동안 빨강을 유지한다.
+  if (els.bookmarklet) {
+    els.bookmarklet.addEventListener('dragstart', () => els.bookmarklet.classList.add('dragging'));
+    els.bookmarklet.addEventListener('dragend', () => els.bookmarklet.classList.remove('dragging'));
+  }
   // 미리보기가 다시 그려질 때마다 스크롤 복원 + 슬롯·삭제 핸들러를 새로 연결한다.
   els.preview.addEventListener('load', onPreviewLoad);
 

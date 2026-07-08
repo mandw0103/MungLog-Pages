@@ -4,11 +4,25 @@
   --panel-2: #2e2f36;
   --text: #e8e8ea;
   --muted: #9b9ba3;
-  --accent: #5b8def;
+  --accent: #DC004E;
   --border: #3a3b42;
 }
 
+/* 밝은 모드 — data-theme="light" 일 때 변수만 덮어써 전체 UI 색을 바꾼다. */
+:root[data-theme="light"] {
+  --bg: #f3f4f6;
+  --panel: #ffffff;
+  --panel-2: #eceef2;
+  --text: #1e2126;
+  --muted: #656a72;
+  --accent: #DC004E;
+  --border: #d8dbe0;
+}
+
 * { box-sizing: border-box; }
+
+/* 체크박스 등 폼 컨트롤도 테마색(--accent)으로 */
+input[type="checkbox"] { accent-color: var(--accent); }
 
 /* display:flex 등 명시 display 가 hidden 속성을 덮어쓰지 않도록 */
 [hidden] { display: none !important; }
@@ -19,13 +33,67 @@ body {
   background: var(--bg);
   color: var(--text);
   line-height: 1.6;
+  transition: background-color .2s, color .2s;
 }
 
-.site-header {
-  padding: 32px 20px 8px;
+/* 헤더 박스 모델을 main 과 똑같이(max-width 920 + 좌우 20) 맞춰,
+   토글 우측 끝이 아래 패널(로그 가져오기 박스)의 우측 끝과 정확히 정렬되게 한다. */
+.site-header { padding: 32px 0 8px; }
+.header-inner {
+  position: relative;
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 0 20px;
   text-align: center;
 }
 .site-header h1 { margin: 0; font-size: 1.6rem; }
+
+/* 밝은/어두운 모드 슬라이드 토글 (제목 우측, 패널 우측 끝과 정렬) */
+.theme-switch {
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 54px;
+  height: 28px;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: background-color .2s, border-color .15s;
+}
+.theme-switch:hover { border-color: var(--accent); }
+/* 트랙 양끝 아이콘(옅게): 왼쪽 달, 오른쪽 해 */
+.theme-switch::before,
+.theme-switch::after {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12px;
+  line-height: 1;
+  opacity: .7;
+  pointer-events: none;
+}
+.theme-switch::before { content: "🌙"; left: 7px; }
+.theme-switch::after  { content: "☀️"; right: 7px; }
+/* 슬라이드 knob — 비활성(반대) 아이콘을 덮는다.
+   어두운 모드: knob 오른쪽 → 해(☀️)를 가림, 달(🌙)만 보임
+   밝은 모드:   knob 왼쪽  → 달(🌙)을 가림, 해(☀️)만 보임
+   z-index 로 가상요소(::before/::after) 아이콘 위에 확실히 올린다. */
+.ts-knob {
+  position: absolute;
+  top: 2px;
+  left: calc(100% - 24px);
+  z-index: 1;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .35);
+  transition: left .2s ease;
+}
+:root[data-theme="light"] .ts-knob { left: 2px; }
 
 main {
   max-width: 920px;
@@ -54,7 +122,21 @@ code {
 /* 가져오기 방법 */
 .get-method { margin-top: 4px; }
 .get-method p { margin: 8px 0; }
-a#bookmarklet { text-decoration: none; display: inline-block; cursor: grab; }
+/* 북마클릿 버튼: 평소엔 빨간 테두리(투명 배경), 마우스 오버·북마크바로 끌어당기는 중엔 전체 빨강 */
+a#bookmarklet {
+  text-decoration: none;
+  display: inline-block;
+  cursor: grab;
+  background: transparent;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+a#bookmarklet:hover,
+a#bookmarklet.dragging {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
 .hint { color: var(--muted); font-size: .9rem; margin: 10px 0 0; }
 .info { color: var(--accent); margin: 12px 0 0; font-weight: 600; }
 
@@ -66,51 +148,104 @@ a#bookmarklet { text-decoration: none; display: inline-block; cursor: grab; }
   padding: 8px 16px;
   cursor: pointer;
   font-size: .95rem;
+  /* a·button 을 섞어 써도 세로 크기가 같도록 폰트·행높이를 고정한다
+     (버튼 기본값 normal 에 가까운 1.2 로 두어 예전 컴팩트한 높이 유지) */
+  font-family: inherit;
+  line-height: 1.2;
+  /* 토글과 동일한 hover 페이드 (마우스 올릴 때/내릴 때 부드럽게) */
+  transition: background-color .2s, border-color .15s, color .15s;
 }
 .btn:hover { border-color: var(--accent); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 /* 컷인 삽입 모드 on 상태 표시 */
 .btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
+/* 아웃라인 버튼(코코포리아 로그 가져오기와 동일 스타일): 평소 빨간 테두리, hover 시 전체 빨강 */
+.btn.outline {
+  background: transparent;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+/* hover, 그리고 컷인 삽입 모드 ON(.active) 이면 전체 빨강으로 채운다 */
+.btn.outline:hover,
+.btn.outline.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
 /* 옵션 */
 .options { display: flex; flex-wrap: wrap; gap: 14px 24px; }
 .opt { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .channels { margin-top: 16px; }
-.channels-label { color: var(--muted); display: block; margin-bottom: 8px; }
+/* "채널 필터" 라벨 — 활성 탭과 같은 스타일(흰색 볼드 + 빨간 밑줄) */
+.channels-label {
+  display: inline-block;
+  margin-bottom: 10px;
+  color: var(--text);
+  font-weight: 700;
+  padding-bottom: 4px;
+  border-bottom: 2px solid var(--text);
+}
 .channel-list { display: flex; flex-wrap: wrap; gap: 8px 18px; }
 
 /* 이어 출력 (갯수 / 대사 토글) */
 .range-mode { margin-top: 16px; }
+/* 밑줄 탭 스타일 — 비활성 포함 전체에 얇은 밑줄(muted, 1px)이 깔리고,
+   활성 탭 아래엔 굵은 밑줄(글자색, 2px)이 그 위를 덮으며 좌우로 슬라이드한다.
+   밑줄 너비/위치(--ind-w/--ind-x)는 JS 가 활성 탭에 맞춰 넣고, 이동은 CSS 가 처리. */
 .toggle {
+  position: relative;
   display: inline-flex;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  overflow: hidden;
-  margin-bottom: 12px;
+  gap: 22px;
+  margin-bottom: 14px;
+}
+/* 비활성 포함 전체에 깔리는 얇은 밑줄(1px, 옅게) — bottom:0 에 픽셀 정렬 */
+.toggle::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--border);
+}
+/* 활성 탭 밑줄 — 채널 필터(.channels-label)와 완전히 같은 방식인 border-bottom 2px 로 그려
+   렌더링 차이(서브픽셀 흐림)를 없앤다. 위치는 left 로 잡아 좌우로 슬라이드. */
+.toggle::after {
+  content: "";
+  position: absolute;
+  left: var(--ind-x, 0);
+  bottom: 0;
+  width: var(--ind-w, 0);
+  height: 0;
+  box-sizing: content-box;
+  border-bottom: 2px solid var(--text);
+  transition: left .2s ease, width .2s ease;
 }
 .toggle-btn {
-  background: var(--panel);
-  color: var(--muted);
+  background: transparent;
   border: 0;
-  padding: 7px 14px;
+  padding: 8px 2px;
   cursor: pointer;
-  font-size: .9rem;
+  font-size: .95rem;
+  color: var(--muted);
+  white-space: nowrap;
+  transition: color .15s;
 }
-.toggle-btn + .toggle-btn { border-left: 1px solid var(--border); }
-.toggle-btn.active { background: var(--accent); color: #fff; }
+.toggle-btn:hover { color: var(--text); }
+.toggle-btn.active { color: var(--text); font-weight: 700; }
 
 /* 출력 범위(시작 번호 ~ 끝) */
 .range { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; }
 .range-text strong { color: var(--accent); }
-.range-info { display: block; margin-top: 10px; color: var(--muted); font-size: .9rem; }
+.range-info { display: block; margin-top: 10px; color: var(--accent); font-weight: 600; }
 .num {
   width: 80px;
   background: var(--panel-2);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 8px;
+  border-radius: 8px;
+  padding: 8px 8px;              /* 버튼과 같은 세로 크기 */
+  font-family: inherit;
   font-size: .95rem;
+  line-height: 1.2;
 }
 .num:focus { outline: none; border-color: var(--accent); }
 
@@ -123,14 +258,14 @@ a#bookmarklet { text-decoration: none; display: inline-block; cursor: grab; }
   background: var(--panel-2);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 10px;
+  border-radius: 8px;
+  padding: 8px 10px;             /* 버튼과 같은 세로 크기 */
+  font-family: inherit;
   font-size: .95rem;
+  line-height: 1.2;
 }
 .text-in:focus { outline: none; border-color: var(--accent); }
-.search-info { font-size: .9rem; flex-basis: 100%; }
-.search-info.ok { color: #5ad17f; }
-.search-info.err { color: #ff6b6b; }
+.search-info { font-size: .9rem; flex-basis: 100%; color: var(--muted); }
 
 /* 출력 */
 .output-head {

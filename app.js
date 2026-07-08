@@ -97,7 +97,7 @@
 
   function onLoaded() {
     els.loadInfo.hidden = false;
-    els.loadInfo.textContent = `→총 ${messages.length}건 로드${roomId ? ` (방: ${roomId})` : ''}`;
+    els.loadInfo.textContent = `→ ${messages.length}건 로드${roomId ? ` (방: ${roomId})` : ''}`;
     // 새 로그를 받으면 출력 범위·검색 상태를 처음으로 되돌린다.
     els.optStart.value = '1';
     els.searchText.value = '';
@@ -151,7 +151,7 @@
       const wrap = document.createElement('label');
       wrap.className = 'opt';
       const checked = isMainChannel(key) ? ' checked' : '';
-      wrap.innerHTML = `<input type="checkbox" class="chk-channel" value="${escapeHtml(key)}" id="${id}"${checked}> ${escapeHtml(label)}`;
+      wrap.innerHTML = `<input type="checkbox" class="chk-channel" value="${escapeHtml(key)}" id="${id}"${checked}><span class="opt-label">${escapeHtml(label)}</span>`;
       els.channelList.appendChild(wrap);
     }
     els.channelList.querySelectorAll('.chk-channel').forEach(c => c.addEventListener('change', render));
@@ -400,27 +400,24 @@ ${HR}`;
     const extraCss = opt.preview ? PREVIEW_CSS : '';
     // 마우스에 가까운 경계에 띄울 삽입 슬롯(미리보기 전용, JS 가 위치를 옮긴다)
     const bandEl = opt.preview ? '<div id="cutin-band">+ 여기에 컷인 삽입</div>' : '';
+    // 미리보기는 사이트 테마(어두운/밝은)에 맞춰 배경·스크롤바를 통일한다.
+    // 다운로드 HTML(preview=false)에는 넣지 않아 ccfolia 스킨 원본을 유지한다.
+    const themeChrome = opt.preview
+      ? `\n:root { color-scheme: ${(view && view.theme) === 'light' ? 'light' : 'dark'}; }\nhtml, body { background: ${(view && view.bg) || '#2c2c2c'}; }`
+      : '';
     return `
     <html>
       <head>
       <meta charset="UTF-8">
         <style>
-${OUTPUT_CSS}${extraCss}
+${OUTPUT_CSS}${extraCss}${themeChrome}
         </style>
       </head>
       <body>
 ${bandEl}
         <div class="ccfolia_wrap">
 
-      <div style="text-align: center; margin-top: 30px;">
-
-      </div>
-
 ${rows}
-
-      <div style="text-align: center; margin-top: 30px;">
-
-      </div>
 
         </div>
       </body>
@@ -451,7 +448,7 @@ p{
 .ccfolia_wrap {
   position: relative;
   padding: 10px !important;
-  background-color: #2c2c2cde;
+  background-color: #474747;   /* 불투명 — 테마별 backdrop 이 비쳐 색이 달라지지 않게 */
   color: #fefefe;
 }
 .msg_container {
@@ -544,7 +541,7 @@ body.insert-mode .cutin-del{ display: block; }
     els.rangeInfo.textContent = !all.length
       ? ''
       : list.length
-        ? `→ ${start}~${all.length}번째, ${list.length}건 출력`
+        ? `→ ${list.length}건 출력 (${start}~${all.length}번째)`
         : '→ 출력할 로그가 없습니다 (범위 끝)';
 
     // srcdoc 을 새로 쓰면 iframe 이 reload 되어 스크롤이 맨 위로 튄다.
@@ -557,7 +554,13 @@ body.insert-mode .cutin-del{ display: block; }
     els.preview.dataset.html = buildDocument(list, { preview: false });
     // 미리보기는 삽입 보조 UI(띠·삭제버튼·앵커)를 항상 포함해 그린다.
     // 삽입 모드 on/off 는 body.insert-mode 클래스로만 토글하므로 reload(깜빡임)가 없다.
-    els.preview.srcdoc = buildDocument(list, { preview: true });
+    // 현재 사이트 테마와 배경(--panel)을 넘겨 미리보기 배경·스크롤바를 통일한다.
+    const rootStyle = getComputedStyle(document.documentElement);
+    els.preview.srcdoc = buildDocument(list, {
+      preview: true,
+      theme: document.documentElement.dataset.theme === 'light' ? 'light' : 'dark',
+      bg: rootStyle.getPropertyValue('--panel').trim() || '#2c2c2c',
+    });
   }
 
   function download() {
@@ -575,12 +578,25 @@ body.insert-mode .cutin-del{ display: block; }
     a.remove();
   }
 
+  // 복사 성공 피드백용 체크(✓) 아이콘. 원본 복사 아이콘은 최초 1회만 저장해 복원한다
+  // (연타로 체크 상태일 때 innerHTML 을 캡처해 아이콘이 사라지는 것을 방지).
+  const CHECK_SVG = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+  let copyIconHTML = null;
+  let copyResetT = 0;
+
   async function copy() {
     const html = els.preview.dataset.html || buildDocument();
     try {
       await navigator.clipboard.writeText(html);
-      els.copyBtn.textContent = '복사됨!';
-      setTimeout(() => (els.copyBtn.textContent = 'HTML 복사'), 1500);
+      // 아이콘 버튼이라 textContent 대신 아이콘을 잠깐 체크로 바꿔 피드백을 준다.
+      if (copyIconHTML == null) copyIconHTML = els.copyBtn.innerHTML;
+      clearTimeout(copyResetT);
+      els.copyBtn.innerHTML = CHECK_SVG;
+      els.copyBtn.title = '복사됨!';
+      copyResetT = setTimeout(() => {
+        els.copyBtn.innerHTML = copyIconHTML;
+        els.copyBtn.title = 'HTML 복사';
+      }, 1500);
     } catch {
       alert('클립보드 복사에 실패했습니다. 다운로드를 이용하세요.');
     }
@@ -772,6 +788,9 @@ body.insert-mode .cutin-del{ display: block; }
   }
   // 미리보기가 다시 그려질 때마다 스크롤 복원 + 슬롯·삭제 핸들러를 새로 연결한다.
   els.preview.addEventListener('load', onPreviewLoad);
+  // 사이트 테마(어두운/밝은)가 바뀌면 미리보기 배경·스크롤바도 다시 맞춘다.
+  new MutationObserver(() => { if (messages.length) render(); })
+    .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
   // ── ccfolia 탭에서 직접 전달받기 (postMessage) ───────────────
   // collector(콘솔/북마클릿)가 ccfolia.com 탭에서 이 페이지를 열고 로그를 넘긴다.

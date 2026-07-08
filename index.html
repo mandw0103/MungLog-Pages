@@ -93,7 +93,13 @@
       <div class="output-head">
         <h2>❸ 결과</h2>
         <div class="actions">
-          <button type="button" id="cutinBtn" class="btn outline">컷인 삽입</button>
+          <!-- 컷인 삽입 + 편집(ImgBB 키 설정) — 한 버튼처럼 보이는 분할 버튼 -->
+          <span id="cutinBtn" class="btn outline split-btn">
+            <button type="button" id="cutinToggle" class="split-part split-main">컷인 삽입</button>
+            <button type="button" id="imgbbSettingsBtn" class="split-part split-icon" aria-label="ImgBB 키 설정" title="ImgBB 키 설정">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
+            </button>
+          </span>
           <button type="button" id="copyBtn" class="btn outline icon" aria-label="HTML 복사" title="HTML 복사">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
           </button>
@@ -102,8 +108,6 @@
           </button>
         </div>
       </div>
-      <p id="cutinHint" class="hint" hidden>미리보기에서 로그 경계에 마우스를 가져가면 <strong>빨간 줄</strong>이 나타납니다.
-         원하는 위치에서 클릭해 이미지를 넣으세요. 컷인 위의 <strong>🗑</strong> 로 삭제합니다. 큰 이미지는 자동으로 줄여 저장됩니다.</p>
       <input type="file" id="cutinFile" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
       <iframe id="preview" title="미리보기"></iframe>
     </section>
@@ -112,6 +116,28 @@
   <footer class="site-footer">
     <p>비공식 도구 · 본인이 접근 권한을 가진 방의 로그만 사용하세요.</p>
   </footer>
+
+  <!-- ImgBB API 키 설정 모달 — 컷인 삽입을 처음 쓸 때(키 없음) 뜨거나, 힌트의 'ImgBB 키 설정'으로 연다. -->
+  <div id="imgbbModal" class="imgbb-modal" hidden>
+    <div class="imgbb-dialog" role="dialog" aria-modal="true" aria-labelledby="imgbbTitle">
+      <button type="button" id="imgbbCloseBtn" class="imgbb-close" aria-label="닫기" title="닫기">✕</button>
+      <h2 id="imgbbTitle">ImgBB API 키 설정</h2>
+      <p class="imgbb-desc">이미지를 넣으려면 무료 API 키가 필요합니다. 아래 순서로 발급받아 붙여넣으세요.</p>
+      <ol class="imgbb-steps">
+        <li><a href="https://imgbb.com/" target="_blank" rel="noopener">imgbb.com</a> 에서 무료 회원가입 / 로그인</li>
+        <li><a href="https://api.imgbb.com/" target="_blank" rel="noopener">api.imgbb.com</a> 접속 → <strong>Get API Key</strong> 클릭</li>
+        <li>발급된 키를 복사해 아래 칸에 붙여넣고 <strong>저장</strong></li>
+      </ol>
+      <input type="text" id="imgbbKeyInput" class="text-in" placeholder="ImgBB API 키를 붙여넣으세요"
+             autocomplete="off" spellcheck="false">
+      <p id="imgbbState" class="imgbb-state"></p>
+      <div class="imgbb-actions">
+        <button type="button" id="imgbbSaveBtn" class="btn primary">저장</button>
+        <button type="button" id="imgbbClearBtn" class="btn" hidden>키 삭제</button>
+      </div>
+      <p class="imgbb-note">키는 이 브라우저에만 저장되며, ImgBB 업로드에만 쓰니다.</p>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>

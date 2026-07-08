@@ -13,11 +13,23 @@
   let preserveScroll = 0;    // 재렌더 시 유지할 미리보기 스크롤 위치
   let freshLoad = false;     // 새 로그를 받은 직후엔 스크롤을 맨 위로
   const TOP = '__top__';     // 맨 위(첫 메시지 앞) 앵커
-  const MAX_CUTIN_W = 800;   // 폴백 임베드 시, 이보다 가로가 크면 줄임(용량 절감)
-  // ImgBB API 키. 채워 두면 컷인 이미지를 ImgBB 에 올려 '짧은 링크'로 넣어 HTML 이
-  // 가벼워진다(렉 해소). 비워 두면 기존 Base64 임베드로 동작한다.
-  // 발급: https://api.imgbb.com/ → Get API key
-  const IMGBB_API_KEY = '8317470d8f37e2946f33f46be9248d15';
+
+  // ImgBB API 키. 사용자가 직접 입력해 브라우저(localStorage)에 저장한다.
+  // 컷인 이미지는 이 키로 ImgBB 에 올려 '짧은 링크'로 넣어 HTML 을 가볍게 유지한다(렉 해소).
+  // 키가 없으면 이미지를 넣을 수 없다. 발급: https://api.imgbb.com/ → Get API key
+  const IMGBB_KEY_LS = 'trpglog-imgbb-key';    // 저장된 API 키
+  const IMGBB_ASKED_LS = 'trpglog-imgbb-asked'; // 설정 모달을 한 번이라도 다뤘는지(자동 재노출 방지)
+  const getImgbbKey = () => { try { return localStorage.getItem(IMGBB_KEY_LS) || ''; } catch (e) { return ''; } };
+  const markImgbbAsked = () => { try { localStorage.setItem(IMGBB_ASKED_LS, '1'); } catch (e) {} };
+  const imgbbAsked = () => { try { return localStorage.getItem(IMGBB_ASKED_LS) === '1'; } catch (e) { return false; } };
+  function setImgbbKey(v) {
+    try { localStorage.setItem(IMGBB_KEY_LS, v); } catch (e) {}
+    markImgbbAsked();
+  }
+  function clearImgbbKey() {
+    try { localStorage.removeItem(IMGBB_KEY_LS); } catch (e) {}
+    markImgbbAsked();
+  }
 
   const $ = (sel) => document.querySelector(sel);
 
@@ -43,8 +55,15 @@
     downloadBtn: $('#downloadBtn'),
     bookmarklet: $('#bookmarklet'),
     cutinBtn: $('#cutinBtn'),
+    cutinToggle: $('#cutinToggle'),
     cutinFile: $('#cutinFile'),
-    cutinHint: $('#cutinHint'),
+    imgbbSettingsBtn: $('#imgbbSettingsBtn'),
+    imgbbModal: $('#imgbbModal'),
+    imgbbKeyInput: $('#imgbbKeyInput'),
+    imgbbState: $('#imgbbState'),
+    imgbbSaveBtn: $('#imgbbSaveBtn'),
+    imgbbClearBtn: $('#imgbbClearBtn'),
+    imgbbCloseBtn: $('#imgbbCloseBtn'),
   };
 
   // ── 유틸 ─────────────────────────────────────────────────────
@@ -603,11 +622,10 @@ body.insert-mode .cutin-del{ display: block; }
   }
 
   // ── 컷인 삽입/삭제 ───────────────────────────────────────────
-  // 버튼 라벨·안내·활성 표시를 현재 모드에 맞춘다.
+  // 버튼 라벨·활성 표시를 현재 모드에 맞춘다.
   function syncCutinUI() {
     els.cutinBtn.classList.toggle('active', insertMode);
-    els.cutinBtn.textContent = insertMode ? '컷인 삽입 완료' : '컷인 삽입';
-    els.cutinHint.hidden = !insertMode;
+    els.cutinToggle.textContent = insertMode ? '컷인 삽입 완료' : '컷인 삽입';
   }
 
   function toggleInsertMode() {
@@ -623,40 +641,49 @@ body.insert-mode .cutin-del{ display: block; }
         if (band) band.style.display = 'none';   // 끄면 떠 있던 띠를 즉시 감춘다
       }
     }
+    // 삽입 모드를 처음 켰는데 저장된 ImgBB 키가 없으면, 한 번 설정 모달로 미리 안내한다.
+    // (키는 실제로 이미지를 넣을 때 경계 클릭 시점에서도 다시 확인한다.)
+    if (insertMode && !getImgbbKey() && !imgbbAsked()) openImgbbModal();
   }
 
-  // 로컬 이미지 파일 → Base64 Data URL. 가로가 MAX_CUTIN_W 보다 크면 canvas 로 줄여
-  // 임베드 용량을 절감한다(작으면 원본을 그대로 임베드해 재인코딩 손실을 피한다).
-  function fileToCutinSrc(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onerror = () => reject(reader.error || new Error('파일을 읽지 못했습니다.'));
-      reader.onload = () => {
-        const dataUrl = reader.result;
-        const img = new Image();
-        img.onerror = () => reject(new Error('이미지 형식을 읽지 못했습니다.'));
-        img.onload = () => {
-          if (!img.width || img.width <= MAX_CUTIN_W) { resolve(dataUrl); return; }
-          const scale = MAX_CUTIN_W / img.width;
-          const cv = document.createElement('canvas');
-          cv.width = MAX_CUTIN_W;
-          cv.height = Math.round(img.height * scale);
-          cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
-          // png 는 투명도 보존, 그 외는 용량이 작은 jpeg 로 인코딩
-          const type = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
-          resolve(cv.toDataURL(type, 0.9));
-        };
-        img.src = dataUrl;
-      };
-      reader.readAsDataURL(file);
-    });
+  // ── ImgBB API 키 설정 모달 ───────────────────────────────────
+  // 저장 상태에 맞춰 다이얼로그 내용을 갱신한다(저장된 키는 마스킹해 보여주고 삭제 버튼 노출).
+  function syncImgbbModal() {
+    const key = getImgbbKey();
+    els.imgbbKeyInput.value = key;
+    els.imgbbClearBtn.hidden = !key;
+    els.imgbbState.textContent = key
+      ? `현재 저장된 키: ${maskKey(key)}`
+      : '저장된 키가 없습니다.';
+  }
+
+  // 키 노출을 줄이려 앞 4·뒤 4 자만 보여준다(짧으면 그대로).
+  function maskKey(k) {
+    return k.length <= 10 ? k : k.slice(0, 4) + '…' + k.slice(-4);
+  }
+
+  function openImgbbModal() {
+    syncImgbbModal();
+    els.imgbbModal.hidden = false;
+    els.imgbbKeyInput.focus();
+  }
+
+  function closeImgbbModal() {
+    els.imgbbModal.hidden = true;
+    markImgbbAsked();   // 닫는 순간(× · 배경 클릭 포함)에도 '다뤘음'으로 표시해 자동 재노출을 막는다
+  }
+
+  function saveImgbbKey() {
+    const v = els.imgbbKeyInput.value.trim();
+    if (v) setImgbbKey(v); else clearImgbbKey();
+    closeImgbbModal();
   }
 
   // 이미지를 ImgBB 에 올려 링크를 받는다(브라우저 직접 업로드).
-  async function uploadToImgbb(file) {
+  async function uploadToImgbb(file, key) {
     const form = new FormData();
     form.append('image', file);
-    const res = await fetch('https://api.imgbb.com/1/upload?key=' + encodeURIComponent(IMGBB_API_KEY), {
+    const res = await fetch('https://api.imgbb.com/1/upload?key=' + encodeURIComponent(key), {
       method: 'POST',
       body: form,
     });
@@ -667,13 +694,12 @@ body.insert-mode .cutin-del{ display: block; }
     return url;   // 짧은 https 링크(i.ibb.co/...)
   }
 
-  // 컷인 src 결정: API 키가 있으면 ImgBB 링크, 실패하거나 없으면 Base64 임베드로 폴백.
+  // 컷인 src 결정: ImgBB 에 올려 '짧은 링크'를 받는다. 키가 없거나 업로드에 실패하면
+  // 예외를 던져(addCutin 이 자리 표시를 지우고 안내) 이미지가 들어가지 않게 한다.
   async function resolveCutinSrc(file) {
-    if (IMGBB_API_KEY) {
-      try { return await uploadToImgbb(file); }
-      catch (e) { console.warn('ImgBB 업로드 실패 — Base64 임베드로 대체합니다.', e); }
-    }
-    return fileToCutinSrc(file);
+    const key = getImgbbKey();
+    if (!key) throw new Error('ImgBB API 키가 설정되지 않았습니다.');
+    return uploadToImgbb(file, key);
   }
 
   function addCutin(file) {
@@ -750,6 +776,12 @@ body.insert-mode .cutin-del{ display: block; }
       const node = e.target && e.target.nodeType === 1 ? e.target : null;
       if (node && node.closest && node.closest('.cutin-del')) return;
       if (curAfter == null) return;
+      // 컷인은 ImgBB 업로드로만 넣는다. 키가 없으면 넣지 못하므로 경고 후 설정 모달로 안내한다.
+      if (!getImgbbKey()) {
+        alert('ImgBB API 키가 없어 이미지를 넣을 수 없습니다.\n먼저 ImgBB 키를 설정해 주세요.');
+        openImgbbModal();
+        return;
+      }
       pendingAfterId = curAfter;
       els.cutinFile.value = '';                 // 같은 파일 다시 선택해도 change 가 뜨도록
       els.cutinFile.click();
@@ -775,11 +807,21 @@ body.insert-mode .cutin-del{ display: block; }
   els.modeText.addEventListener('click', () => setMode('text'));
   els.downloadBtn.addEventListener('click', download);
   els.copyBtn.addEventListener('click', copy);
-  els.cutinBtn.addEventListener('click', toggleInsertMode);
+  // 분할 버튼 — 왼쪽(컷인 삽입) 은 삽입 모드 토글, 오른쪽(편집 아이콘) 은 ImgBB 키 설정 모달.
+  els.cutinToggle.addEventListener('click', toggleInsertMode);
+  els.imgbbSettingsBtn.addEventListener('click', openImgbbModal);
   els.cutinFile.addEventListener('change', () => {
     const f = els.cutinFile.files && els.cutinFile.files[0];
     if (f) addCutin(f);
   });
+  // ImgBB 키 설정 모달 — 저장/삭제/닫기로 갱신·종료.
+  els.imgbbSaveBtn.addEventListener('click', saveImgbbKey);
+  els.imgbbClearBtn.addEventListener('click', () => { clearImgbbKey(); syncImgbbModal(); });
+  els.imgbbCloseBtn.addEventListener('click', closeImgbbModal);
+  els.imgbbKeyInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveImgbbKey(); });
+  // 오버레이(다이얼로그 바깥) 클릭·Esc 로 닫기
+  els.imgbbModal.addEventListener('click', (e) => { if (e.target === els.imgbbModal) closeImgbbModal(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !els.imgbbModal.hidden) closeImgbbModal(); });
   // 북마클릿 버튼: 북마크바로 끌어당기는 동안엔 :hover 가 유지되지 않을 수 있어
   // dragstart/dragend 로 .dragging 을 붙였다 떼어 그동안 빨강을 유지한다.
   if (els.bookmarklet) {

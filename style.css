@@ -7,6 +7,7 @@
   --accent: #DC004E;
   --border: #3a3b42;
   --focus-border: #fff;   /* 입력칸 포커스 테두리(어두운 모드=흰색) */
+  --strong: #fff;         /* 강조 텍스트·버튼(빨강 대신): 어두운 모드=흰색 */
 }
 
 /* 밝은 모드 — data-theme="light" 일 때 변수만 덮어써 전체 UI 색을 바꾼다. */
@@ -19,6 +20,7 @@
   --accent: #DC004E;
   --border: #d8dbe0;
   --focus-border: #000;   /* 밝은 모드=검은색 */
+  --strong: #000;         /* 밝은 모드=검은색 */
 }
 
 * { box-sizing: border-box; }
@@ -140,7 +142,7 @@ a#bookmarklet.dragging {
   color: #fff;
 }
 .hint { color: var(--muted); font-size: .9rem; margin: 10px 0 0; }
-.info { color: var(--accent); margin: 12px 0 0; font-weight: 600; }
+.info { color: var(--strong); margin: 12px 0 0; font-weight: 600; }
 
 .btn {
   background: var(--panel-2);
@@ -172,6 +174,60 @@ a#bookmarklet.dragging {
 .btn.outline:hover,
 .btn.outline.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
+/* '이 대사 다음부터 출력'·'컷인 삽입'·'HTML 복사' 버튼은 강조색(빨강) 대신
+   검정(어두운 모드=흰색)으로 표시하고, hover·활성 시 그 색으로 채운다.
+   (ID 선택자라 위 .btn.outline / .btn:hover 규칙을 우선순위로 덮는다.) */
+#searchBtn,
+#cutinBtn,
+#copyBtn { border-color: var(--strong); color: var(--strong); }
+#searchBtn:hover,
+#copyBtn:hover { background: var(--strong); border-color: var(--strong); color: var(--bg); }
+/* 컷인 버튼은 분할 버튼이라 컨테이너를 통째로 채우지 않는다. .btn.outline 의 hover·active
+   빨강 배경을 id 우선순위로 눌러 항상 투명하게 두고, 테두리만 --strong 으로 유지한다.
+   실제 채움은 안쪽 파트(.split-part)가 각자 처리한다. */
+#cutinBtn:hover,
+#cutinBtn.active { background: transparent; border-color: var(--strong); }
+
+/* 컷인 삽입 + 편집(ImgBB 키 설정) — 한 버튼처럼 보이는 분할 버튼.
+   컨테이너(.btn.outline)가 테두리·라운드를 갖고, 패딩은 안쪽 파트가 나눠 가진다. */
+.split-btn { padding: 0; display: inline-flex; align-items: stretch; overflow: hidden; }
+.split-btn .split-part {
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;            /* 컨테이너(#cutinBtn → --strong) 색을 상속 */
+  font: inherit;
+  line-height: 1.2;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  transition: background-color .15s, color .15s;
+}
+.split-main { padding: 8px 14px; }
+.split-icon { padding: 8px 11px; position: relative; }
+.split-icon svg { display: block; width: 16px; height: 16px; }
+/* 가운데 구분선 '|' — 편집 파트의 왼쪽 경계에 얹는 오버레이라 두 파트가 맞붙고,
+   hover 채움이 이 경계선까지 틈 없이 닿는다. top/bottom 여백으로 짧은 인셋 모양 유지. */
+.split-icon::before {
+  content: "";
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 0;
+  width: 1px;
+  background: var(--strong);
+  opacity: .45;
+  transition: opacity .15s;
+}
+/* 파트를 검정으로 채울 때(어느 쪽이든 hover, 또는 삽입 모드 활성)는 구분선을 감춰,
+   검정 위/옆에 선이 따로 떠 보이지 않게 한다. 구분선은 평소(rest)에만 나타난다. */
+.split-btn:hover .split-icon::before,
+#cutinBtn.active .split-icon::before { opacity: 0; }
+/* 어느 쪽을 누르는지 보이도록, 마우스 올린 파트만 채운다 */
+.split-btn .split-part:hover { background: var(--strong); color: var(--bg); }
+/* 컷인 삽입 모드 ON: 왼쪽(삽입) 파트를 채워 활성 상태를 표시 */
+#cutinBtn.active .split-main { background: var(--strong); color: var(--bg); }
+
 /* 아이콘 전용 버튼(복사·다운로드) — SVG 를 가운데 정렬, 글자 버튼과 높이 유지 */
 .btn.icon { display: inline-flex; align-items: center; justify-content: center; padding: 8px 12px; }
 .btn.icon svg { display: block; width: 18px; height: 18px; }
@@ -193,7 +249,12 @@ a#bookmarklet.dragging {
   transition: color .15s;
   user-select: none;
 }
-.opt:hover .opt-label { color: var(--text); }
+/* 마우스 오버 시 글자색을 선명하게 + 밑줄까지 더해 피드백을 키운다 */
+.opt:hover .opt-label {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 .opt input[type="checkbox"]:checked + .opt-label {
   color: var(--accent);
   font-weight: 700;
@@ -260,7 +321,7 @@ a#bookmarklet.dragging {
 /* 출력 범위(시작 번호 ~ 끝) */
 .range { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; }
 .range-text strong { color: var(--accent); }
-.range-info { display: block; margin-top: 10px; color: var(--accent); font-weight: 600; }
+.range-info { display: block; margin-top: 10px; color: var(--strong); font-weight: 600; }
 .num {
   width: 80px;
   background: var(--panel-2);
@@ -318,3 +379,54 @@ a#bookmarklet.dragging {
   font-size: .85rem;
   padding: 0 20px 40px;
 }
+
+/* ImgBB API 키 설정 모달 — 반투명 오버레이 + 가운데 다이얼로그(패널 카드 재사용) */
+.imgbb-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, .55);
+}
+.imgbb-dialog {
+  position: relative;
+  width: 100%;
+  max-width: 460px;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px 22px 20px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .4);
+}
+.imgbb-dialog h2 { margin: 0 0 12px; font-size: 1.15rem; }
+.imgbb-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 15px;
+  cursor: pointer;
+  transition: color .15s, background-color .15s;
+}
+.imgbb-close:hover { color: var(--text); background: var(--panel-2); }
+.imgbb-desc { margin: 0 0 12px; color: var(--text); }
+.imgbb-steps { margin: 0 0 14px; padding-left: 20px; color: var(--text); }
+.imgbb-steps li { margin: 4px 0; }
+.imgbb-dialog a { color: var(--accent); font-weight: 600; }
+/* 입력칸은 .text-in 스타일을 재사용하되, 모달 안에서는 한 줄 전체 폭으로 */
+.imgbb-dialog .text-in { width: 100%; flex: none; margin: 2px 0 0; }
+.imgbb-state { margin: 10px 0 16px; color: var(--muted); font-size: .9rem; }
+.imgbb-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.imgbb-note { margin: 16px 0 0; color: var(--muted); font-size: .82rem; }

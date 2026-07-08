@@ -376,10 +376,8 @@ ${HR}`;
       ? `<img src="${escapeHtml(m.iconUrl)}" alt="${escapeHtml(m.name || '')}" style="width: 40px; height: 40px; object-fit: cover; object-position: top center; border-radius: 0;" referrerpolicy="no-referrer">`
       : '';
 
-    // <b> 영역: 시간 표시
-    const bParts = [];
-    if (opt.time && m.createdAt) bParts.push(` - ${escapeHtml(fmtTime(m.createdAt))}`);
-    const bTag = bParts.length ? `<b>${bParts.join('')}</b>` : '';
+    // <b> 영역: 시간 표시(판정·시스템 메시지와 동일 형식)
+    const bTag = (opt.time && m.createdAt) ? `<b> - ${escapeHtml(fmtTime(m.createdAt))}</b>` : '';
 
     // 판정 키워드가 없는 주사위(예: 데미지 굴림)는 명령+결과를 본문으로 표시.
     // 주사위 본문은 판정처럼 볼드 처리하고, 일반 대사는 기본 굵기로 둔다.
@@ -423,7 +421,7 @@ ${HR}`;
 
   // 메시지 행 + 컷인을 한 줄씩 엮는다.
   // 삽입 모드(preview)에선 슬롯을 일일이 그리지 않고, 각 행에 위/아래 삽입 앵커만
-  // 심어 둔다. 실제 파란 띠는 마우스에 가까운 경계 한 곳에만 JS 로 띄운다(가벼움).
+  // 심어 둔다. 실제 삽입 띠는 마우스에 가까운 경계 한 곳에만 JS 로 띄운다(가벼움).
   // 순서 바꾸기 모드에서 각 메시지 행 우측에 붙는 드래그 핸들(≡). 미리보기에서만 넣고,
   // reorder-mode 일 때만 보인다. .gap(position:relative) 기준으로 CSS 가 우측에 절대배치한다.
   const REORDER_HANDLE = '<span class="reorder-handle" aria-hidden="true">&#9776;</span>';
@@ -708,7 +706,7 @@ body.reorder-mode .reorder-handle{ display: block; }
   }
 
   // ── 컷인 삽입/삭제 ───────────────────────────────────────────
-  // 버튼 라벨·활성 표시를 현재 모드에 맞춘다.
+  // 버튼 활성 표시를 현재 모드에 맞춘다.
   function syncCutinUI() {
     // 활성 여부는 버튼 색(.active)으로만 표시하고, 라벨은 바꾸지 않는다.
     els.cutinBtn.classList.toggle('active', insertMode);
@@ -731,7 +729,7 @@ body.reorder-mode .reorder-handle{ display: block; }
   }
 
   // ── 순서 바꾸기(드래그 재정렬) 모드 ─────────────────────────
-  // 버튼 라벨·활성 표시를 현재 모드에 맞춘다.
+  // 버튼 활성 표시를 현재 모드에 맞춘다.
   function syncReorderUI() {
     // 활성 여부는 버튼 색(.active)으로만 표시하고, 라벨은 바꾸지 않는다.
     els.reorderToggle.classList.toggle('active', reorderMode);
@@ -891,15 +889,6 @@ body.reorder-mode .reorder-handle{ display: block; }
       n = n.nextSibling;
     }
     return block;
-  }
-
-  function prevMessageRow(row) {
-    let n = row.previousElementSibling;
-    while (n) {
-      if (n.classList && n.classList.contains('gap') && n.hasAttribute('data-mid')) return n;
-      n = n.previousElementSibling;
-    }
-    return null;
   }
 
   // 이 노드보다 위에 있는 가장 가까운 메시지 행. 없으면 null(=맨 위, TOP 구역).
@@ -1125,7 +1114,7 @@ body.reorder-mode .reorder-handle{ display: block; }
         const ownIds = cutins.filter(c => c.afterId === msgId).map(c => String(c.id));
         moveBlockBefore(block, ref);                         // 메시지 한 줄만 이동(딸린 이미지는 남음)
         // 메시지 순서를 DOM(이동 결과)에 맞춘다 — 위 메시지 뒤로. 순서가 그대로면 no-op.
-        const prev = prevMessageRow(rowEl);
+        const prev = anchorMessageRow(rowEl);
         moveMessage(msgId, prev ? prev.getAttribute('data-mid') : TOP);
         // 이 메시지의 이미지들: 새 DOM 위치 기준으로 앵커를 다시 잡는다.
         //  · 메시지가 이미지 위로 갔으면 이미지는 그대로 메시지에 붙고,

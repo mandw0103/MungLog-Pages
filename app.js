@@ -8,6 +8,8 @@
   // ── 컷인(로그 사이 이미지) 상태 ──────────────────────────────
   let cutins = [];           // [{ id, afterId, src }] — afterId 메시지 _id(또는 TOP) 뒤에 삽입
   let insertMode = false;    // 컷인 삽입 모드(미리보기에 슬롯/삭제버튼 표시)
+  let reorderMode = false;   // 순서 바꾸기 모드(미리보기에 드래그 핸들 표시)
+  let orderDirty = false;    // 재정렬로 messages 순서가 바뀌어 미리보기 컷인 앵커 속성이 낡았는지
   let pendingAfterId = null; // 슬롯 클릭으로 고른 삽입 위치(파일 선택 대기)
   let cutinSeq = 0;          // 컷인 고유 id 카운터
   let preserveScroll = 0;    // 재렌더 시 유지할 미리보기 스크롤 위치
@@ -57,6 +59,7 @@
     cutinBtn: $('#cutinBtn'),
     cutinToggle: $('#cutinToggle'),
     cutinFile: $('#cutinFile'),
+    reorderToggle: $('#reorderToggle'),
     imgbbSettingsBtn: $('#imgbbSettingsBtn'),
     imgbbModal: $('#imgbbModal'),
     imgbbKeyInput: $('#imgbbKeyInput'),
@@ -97,9 +100,10 @@
     messages = list;
     // 컷인 앵커로 쓸 안정적인 _id 보장(수집기 JSON 엔 항상 있으나, 없으면 순번으로 채움)
     messages.forEach((m, i) => { if (m._id == null) m._id = 'm' + i; });
-    // 새 로그를 받으면 이전 컷인·삽입 모드는 초기화한다(예전 메시지를 가리키므로).
+    // 새 로그를 받으면 이전 컷인·삽입/순서 모드는 초기화한다(예전 메시지를 가리키므로).
     cutins = [];
     insertMode = false;
+    reorderMode = false;
     roomId = (data && data.roomId) || '';
     onLoaded();
   }
@@ -122,6 +126,7 @@
     els.searchText.value = '';
     setSearchInfo('', '');
     syncCutinUI();
+    syncReorderUI();
     buildChannelFilter();
     els.optionsPanel.hidden = false;
     els.outputPanel.hidden = false;
@@ -367,16 +372,18 @@ ${HR}`;
   // 일반 로그(.gap)와 같은 좌우 패딩·아래 구분선(HR)을 써서 여백을 로그와 맞춘다.
   // 이미지는 가운데 정렬하고, 가로가 넘치면 100%로 축소해 영역 안에 들어오게 한다.
   function cutinHtml(c, opt) {
-    // 삭제 버튼은 미리보기(삽입 모드)에서만 — 다운로드 HTML 엔 들어가지 않는다.
+    // 삭제 버튼·드래그 핸들·식별자는 미리보기에서만 — 다운로드 HTML 엔 들어가지 않는다.
     const del = opt.preview
       ? `<button type="button" class="cutin-del" data-id="${c.id}" title="컷인 삭제">🗑</button>`
       : '';
+    const handle = opt.preview ? REORDER_HANDLE : '';   // 순서 바꾸기 모드에서 컷인도 독립적으로 이동
+    const cid = opt.preview ? ` data-cutin-id="${c.id}"` : '';
     // 업로드 중이면 자리 표시 박스, 완료되면 이미지(외부 링크일 수 있어 referrer 미전송).
     const inner = c.uploading
       ? `<div style="padding: 24px; color: rgb(200, 160, 175); font-size: 14px;">이미지 업로드 중…</div>`
       : `<img src="${c.src}" alt="컷인" style="max-width: 100%; border-radius: 5px; display: block;" referrerpolicy="no-referrer">`;
-    return `    <div class="gap cutin" style="display: flex; justify-content: center; background-color: transparent; position: relative;">
-        ${del}${inner}
+    return `    <div class="gap cutin"${cid} style="display: flex; justify-content: center; background-color: transparent; position: relative;">
+        ${del}${inner}${handle}
     </div>
 ${HR}`;
   }
@@ -390,6 +397,10 @@ ${HR}`;
   // 메시지 행 + 컷인을 한 줄씩 엮는다.
   // 삽입 모드(preview)에선 슬롯을 일일이 그리지 않고, 각 행에 위/아래 삽입 앵커만
   // 심어 둔다. 실제 파란 띠는 마우스에 가까운 경계 한 곳에만 JS 로 띄운다(가벼움).
+  // 순서 바꾸기 모드에서 각 메시지 행 우측에 붙는 드래그 핸들(≡). 미리보기에서만 넣고,
+  // reorder-mode 일 때만 보인다. .gap(position:relative) 기준으로 CSS 가 우측에 절대배치한다.
+  const REORDER_HANDLE = '<span class="reorder-handle" aria-hidden="true">&#9776;</span>';
+
   function buildRows(items, opt) {
     const rows = [];
     cutinsFor(TOP, opt).forEach(c => rows.push(cutinHtml(c, opt)));
@@ -401,6 +412,8 @@ ${HR}`;
         const attrs = ` data-mid="${escapeHtml(m._id)}"`
           + ` data-top-after="${escapeHtml(prevMid)}" data-bottom-after="${escapeHtml(m._id)}"`;
         row = row.replace('<div class="gap"', '<div class="gap"' + attrs);
+        // 드래그 핸들을 .gap 닫는 태그 직전(</p> 뒤)에 넣는다. 모든 메시지 타입이 동일 종료 형태.
+        row = row.replace('</p>\n    </div>', '</p>' + REORDER_HANDLE + '\n    </div>');
       }
       rows.push(row);
       cutinsFor(m._id, opt).forEach(c => rows.push(cutinHtml(c, opt)));
@@ -419,6 +432,8 @@ ${HR}`;
     const extraCss = opt.preview ? PREVIEW_CSS : '';
     // 마우스에 가까운 경계에 띄울 삽입 슬롯(미리보기 전용, JS 가 위치를 옮긴다)
     const bandEl = opt.preview ? '<div id="cutin-band">+ 여기에 컷인 삽입</div>' : '';
+    // 순서 바꾸기 드래그 중 삽입 위치를 보여주는 가로선(미리보기 전용, JS 가 위치를 옮긴다)
+    const lineEl = opt.preview ? '<div id="reorder-line"></div>' : '';
     // 미리보기는 사이트 테마(어두운/밝은)에 맞춰 배경·스크롤바를 통일한다.
     // 다운로드 HTML(preview=false)에는 넣지 않아 ccfolia 스킨 원본을 유지한다.
     const themeChrome = opt.preview
@@ -433,7 +448,7 @@ ${OUTPUT_CSS}${extraCss}${themeChrome}
         </style>
       </head>
       <body>
-${bandEl}
+${bandEl}${lineEl}
         <div class="ccfolia_wrap">
 
 ${rows}
@@ -547,10 +562,45 @@ body.insert-mode .cutin{ outline: 1px dashed rgba(220, 0, 78, 0.45); outline-off
 }
 body.insert-mode .cutin-del{ display: block; }
 .cutin-del:hover{ background: rgba(180, 50, 50, 0.85); }
+
+/* 순서 바꾸기 — 각 로그 우측 드래그 핸들(≡). reorder-mode 일 때만 보인다. */
+.reorder-handle{
+  display: none;
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  color: #bbb;
+  font-size: 18px;
+  line-height: 1;
+  padding: 6px 8px;
+  z-index: 3;
+}
+body.reorder-mode .reorder-handle{ display: block; }
+.reorder-handle:hover{ color: #fff; }
+.reorder-handle:active{ cursor: grabbing; }
+/* 드래그 중인 원본 행은 흐리게 */
+.gap.reorder-dragging{ opacity: 0.4; }
+/* 드롭 위치(삽입 경계)를 보여주는 가로선 */
+#reorder-line{
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  height: 2px;
+  background: rgb(232, 92, 140);
+  display: none;
+  z-index: 6;
+  pointer-events: none;
+}
 `;
 
   // ── 렌더 ─────────────────────────────────────────────────────
   function render() {
+    orderDirty = false;   // 전체 재렌더는 항상 최신 순서·앵커로 그린다
     const all = filtered();
     const start = rangeStart(all.length);
     const list = all.slice(start - 1);
@@ -624,26 +674,57 @@ body.insert-mode .cutin-del{ display: block; }
   // ── 컷인 삽입/삭제 ───────────────────────────────────────────
   // 버튼 라벨·활성 표시를 현재 모드에 맞춘다.
   function syncCutinUI() {
+    // 활성 여부는 버튼 색(.active)으로만 표시하고, 라벨은 바꾸지 않는다.
     els.cutinBtn.classList.toggle('active', insertMode);
-    els.cutinToggle.textContent = insertMode ? '컷인 삽입 완료' : '컷인 삽입';
   }
 
   function toggleInsertMode() {
     insertMode = !insertMode;
     pendingAfterId = null;
+    // 순서 바꾸기와 상호 배타 — 컷인 삽입을 켜면 순서 모드를 끈다.
+    if (insertMode && reorderMode) reorderMode = false;
     syncCutinUI();
-    // reload 없이 미리보기 body 클래스만 토글 → 스크롤 유지, 깜빡임 없음.
-    const doc = els.preview.contentDocument;
-    if (doc && doc.body) {
-      doc.body.classList.toggle('insert-mode', insertMode);
-      if (!insertMode) {
-        const band = doc.getElementById('cutin-band');
-        if (band) band.style.display = 'none';   // 끄면 떠 있던 띠를 즉시 감춘다
-      }
-    }
+    syncReorderUI();
+    // 순서가 바뀐 뒤 컷인 삽입을 켜면, 낡은 컷인 앵커 속성을 새로 그려 갱신한다(한 번의 리로드).
+    // 그 외엔 reload 없이 body 클래스만 토글 → 스크롤 유지, 깜빡임 없음.
+    if (insertMode && orderDirty) render();
+    else applyPreviewModeClasses();
     // 삽입 모드를 처음 켰는데 저장된 ImgBB 키가 없으면, 한 번 설정 모달로 미리 안내한다.
     // (키는 실제로 이미지를 넣을 때 경계 클릭 시점에서도 다시 확인한다.)
     if (insertMode && !getImgbbKey() && !imgbbAsked()) openImgbbModal();
+  }
+
+  // ── 순서 바꾸기(드래그 재정렬) 모드 ─────────────────────────
+  // 버튼 라벨·활성 표시를 현재 모드에 맞춘다.
+  function syncReorderUI() {
+    // 활성 여부는 버튼 색(.active)으로만 표시하고, 라벨은 바꾸지 않는다.
+    els.reorderToggle.classList.toggle('active', reorderMode);
+  }
+
+  function toggleReorderMode() {
+    reorderMode = !reorderMode;
+    // 컷인 삽입과 상호 배타 — 순서 모드를 켜면 컷인 삽입을 끈다.
+    if (reorderMode && insertMode) { insertMode = false; pendingAfterId = null; }
+    syncCutinUI();
+    syncReorderUI();
+    applyPreviewModeClasses();
+  }
+
+  // 두 모드(insert-mode·reorder-mode)의 body 클래스와, 꺼진 모드의 떠 있던 보조 UI(띠·표시선)를
+  // reload 없이 한 번에 반영한다. 토글 어느 쪽에서 호출해도 결과가 일관되게 유지된다.
+  function applyPreviewModeClasses() {
+    const doc = els.preview.contentDocument;
+    if (!doc || !doc.body) return;
+    doc.body.classList.toggle('insert-mode', insertMode);
+    doc.body.classList.toggle('reorder-mode', reorderMode);
+    if (!insertMode) {
+      const band = doc.getElementById('cutin-band');
+      if (band) band.style.display = 'none';   // 끄면 떠 있던 띠를 즉시 감춘다
+    }
+    if (!reorderMode) {
+      const line = doc.getElementById('reorder-line');
+      if (line) line.style.display = 'none';   // 끄면 떠 있던 삽입 표시선을 즉시 감춘다
+    }
   }
 
   // ── ImgBB API 키 설정 모달 ───────────────────────────────────
@@ -728,12 +809,96 @@ body.insert-mode .cutin-del{ display: block; }
     render();
   }
 
+  // ── 순서 바꾸기: 모델(messages) 이동 ─────────────────────────
+  // draggedId 메시지를 afterId(메시지 _id 또는 TOP) '바로 뒤'로 옮긴다.
+  // 실제로 순서가 바뀔 때만 true(무변화면 false → 호출부가 DOM·다운로드 갱신을 건너뜀).
+  function moveMessage(draggedId, afterId) {
+    if (afterId === draggedId) return false;             // 자기 뒤로는 옮길 수 없음
+    const from = messages.findIndex(m => m._id === draggedId);
+    if (from < 0) return false;
+    if (afterId === TOP) {
+      if (from === 0) return false;                      // 이미 맨 앞
+    } else {
+      const ai = messages.findIndex(m => m._id === afterId);
+      if (ai < 0) return false;
+      if (ai === from - 1) return false;                 // 이미 afterId 바로 뒤 → 무변화
+    }
+    const [item] = messages.splice(from, 1);
+    let to = 0;
+    if (afterId !== TOP) to = messages.findIndex(m => m._id === afterId) + 1;  // 제거 후 재계산
+    messages.splice(to, 0, item);
+    return true;
+  }
+
+  // ── 순서 바꾸기: DOM 순회 헬퍼 ──────────────────────────────
+  // '메시지 블록' = 그 메시지 행(.gap[data-mid]) + 뒤따르는 hr·컷인(다음 메시지 행 직전까지).
+  // 메시지를 옮길 때의 '드롭 목표 끝'을 잡는 데 쓴다(그 블록 뒤에 삽입).
+  function collectBlock(row) {
+    const block = [row];
+    let n = row.nextSibling;
+    while (n) {
+      if (n.nodeType === 1 && n.classList && n.classList.contains('gap') && n.hasAttribute('data-mid')) break;
+      block.push(n);
+      n = n.nextSibling;
+    }
+    return block;
+  }
+
+  // '단일 행 블록' = 그 행(.gap) + 뒤따르는 hr·공백(다음 .gap 직전까지).
+  // 메시지든 컷인이든 '자기 한 줄'만 잘라 옮길 때 쓴다(메시지는 딸린 컷인을 데려가지 않음).
+  function collectBlockAny(row) {
+    const block = [row];
+    let n = row.nextSibling;
+    while (n) {
+      if (n.nodeType === 1 && n.classList && n.classList.contains('gap')) break;
+      block.push(n);
+      n = n.nextSibling;
+    }
+    return block;
+  }
+
+  function prevMessageRow(row) {
+    let n = row.previousElementSibling;
+    while (n) {
+      if (n.classList && n.classList.contains('gap') && n.hasAttribute('data-mid')) return n;
+      n = n.previousElementSibling;
+    }
+    return null;
+  }
+
+  // 이 노드보다 위에 있는 가장 가까운 메시지 행. 없으면 null(=맨 위, TOP 구역).
+  function anchorMessageRow(node) {
+    let n = node.previousElementSibling;
+    while (n) {
+      if (n.classList && n.classList.contains('gap') && n.hasAttribute('data-mid')) return n;
+      n = n.previousElementSibling;
+    }
+    return null;
+  }
+  // 위 앵커 메시지의 _id(없으면 TOP) — 컷인이 현재 DOM 위치에서 어느 메시지에 속하는지.
+  function anchorMessageId(node) {
+    const r = anchorMessageRow(node);
+    return r ? r.getAttribute('data-mid') : TOP;
+  }
+
+  // 같은 afterId 그룹의 컷인 배열 순서를 DOM 순서(idOrder)에 맞춰 재배치한다.
+  // 그룹 밖 항목(숨은 컷인 포함)은 건드리지 않아, 필터로 안 보이는 컷인이 유실되지 않는다.
+  function reorderCutinGroup(afterId, idOrder) {
+    const rank = new Map(idOrder.map((id, i) => [String(id), i]));
+    const group = cutins.filter(c => c.afterId === afterId)
+      .sort((a, b) => (rank.has(String(a.id)) ? rank.get(String(a.id)) : 0)
+                    - (rank.has(String(b.id)) ? rank.get(String(b.id)) : 0));
+    let gi = 0;
+    for (let i = 0; i < cutins.length; i++) {
+      if (cutins[i].afterId === afterId) cutins[i] = group[gi++];
+    }
+  }
+
   // 미리보기 reload 직후: 스크롤 복원 + 현재 모드 클래스 반영 + 핸들러 연결.
   function onPreviewLoad() {
     const win = els.preview.contentWindow;
-    const doc = els.preview.contentDocument;
     if (win) win.scrollTo(0, preserveScroll);
-    if (doc && doc.body) doc.body.classList.toggle('insert-mode', insertMode);
+    applyPreviewModeClasses();   // 두 모드(insert/reorder) 클래스를 새 문서에 다시 입힌다
     wirePreview();
   }
 
@@ -786,6 +951,217 @@ body.insert-mode .cutin-del{ display: block; }
       els.cutinFile.value = '';                 // 같은 파일 다시 선택해도 change 가 뜨도록
       els.cutinFile.click();
     });
+
+    // ── 순서 바꾸기(드래그 재정렬) ──────────────────────────────
+    // 커스텀 포인터 드래그: 핸들을 잡으면 드롭 위치 표시선을 띄우고, 화면 가장자리에서
+    // 자동 스크롤한다. 메시지와 컷인(이미지) 모두 독립적으로 옮길 수 있다.
+    //  · 메시지: 자기 한 줄만 옮기고(딸린 컷인은 제자리에 남음), 메시지 블록 경계에만 스냅.
+    //  · 컷인:  아무 로그 사이로든 옮기며, 새 위치의 위 메시지에 다시 앵커된다.
+    // 드롭 때 모델과 DOM 을 함께 갱신한다(리로드 없음).
+    const line = doc.getElementById('reorder-line');
+    const wrap = doc.querySelector('.ccfolia_wrap');
+    let dragRow = null;                 // 드래그 중인 행(.gap)
+    let dragKind = null;                // 'msg' | 'cutin'
+    let dragMsgId = null, dragCutinId = null;
+    let dragBlock = null, dragBlockSet = null;   // 실제로 옮길 노드들(자기 한 줄)
+    let dropRef = null;                 // 이 노드 앞에 삽입(null=맨 끝)
+    let dropValid = false;
+    let lastX = 0, lastY = 0;
+    let moveRaf = 0;
+    let autoRaf = 0, autoDir = 0, autoStep = 0;
+
+    const EDGE = 48, MAX_STEP = 26;
+
+    function stopAutoScroll() {
+      if (autoRaf) { win.cancelAnimationFrame(autoRaf); autoRaf = 0; }
+      autoDir = 0;
+    }
+
+    function invalidate() { dropValid = false; dropRef = null; if (line) line.style.display = 'none'; }
+    function showLine(lineY) {
+      dropValid = true;
+      const scrollTop = doc.documentElement.scrollTop || doc.body.scrollTop || 0;
+      line.style.top = (lineY + scrollTop) + 'px';
+      line.style.display = 'block';
+    }
+    // dropRef 가 드래그 블록 내부면 무효(자기 안으로는 못 넣음). null(맨 끝)은 유효.
+    function refInsideBlock() { return dropRef != null && dragBlockSet.has(dropRef); }
+
+    // lastX/lastY(뷰포트 좌표) 아래 행을 찾아 드롭 위치(dropRef)·표시선을 갱신한다.
+    function updateDrop() {
+      if (!dragRow || !line || !wrap) return;
+      const el = doc.elementFromPoint(lastX, lastY);
+      const hover = el && el.closest ? el.closest('.gap') : null;
+      if (!hover || dragBlockSet.has(hover)) { invalidate(); return; }
+
+      if (dragKind === 'msg') {
+        // (1) 드래그 중인 '자기 이미지' 위에서는 그 이미지들 사이/뒤로 세밀 스냅
+        //     → 로그를 자기에게 붙은 이미지 아래(또는 사이)로 내릴 수 있게 한다.
+        if (!hover.hasAttribute('data-mid') && hover.classList.contains('cutin')
+            && anchorMessageId(hover) === dragMsgId) {
+          const rect = hover.getBoundingClientRect();
+          const topHalf = lastY < rect.top + rect.height / 2;
+          dropRef = topHalf ? hover : collectBlockAny(hover).slice(-1)[0].nextSibling;
+          if (refInsideBlock()) { invalidate(); return; }
+          showLine(topHalf ? rect.top : rect.bottom);
+          return;
+        }
+        // (2) 그 외에는 다른 메시지 블록(메시지+딸린 컷인) 경계에만 스냅
+        //     (남의 이미지 그룹을 쪼개는 위치는 허용하지 않는다 — 모델로 표현 불가)
+        const mrow = hover.hasAttribute('data-mid') ? hover : anchorMessageRow(hover);
+        if (!mrow) {   // 첫 메시지 위(TOP) 구역
+          const first = wrap.querySelector('.gap[data-mid]');
+          if (!first || dragBlockSet.has(first)) { invalidate(); return; }
+          dropRef = first;
+          showLine(first.getBoundingClientRect().top);
+          return;
+        }
+        if (dragBlockSet.has(mrow)) { invalidate(); return; }
+        const block = collectBlock(mrow);
+        let lastEl = mrow;
+        block.forEach(n => { if (n.nodeType === 1) lastEl = n; });
+        const top = mrow.getBoundingClientRect().top;
+        const bottom = lastEl.getBoundingClientRect().bottom;
+        if (lastY < (top + bottom) / 2) {          // 위 절반 → 이 블록 앞
+          dropRef = mrow;
+          if (refInsideBlock()) { invalidate(); return; }
+          showLine(top);
+        } else {                                    // 아래 절반 → 이 블록 뒤(딸린 컷인 다음)
+          dropRef = block[block.length - 1].nextSibling;
+          if (refInsideBlock()) { invalidate(); return; }
+          showLine(bottom);
+        }
+      } else {
+        // 컷인: 아무 행(메시지·컷인) 경계에나 스냅
+        const rect = hover.getBoundingClientRect();
+        if (lastY < rect.top + rect.height / 2) {
+          dropRef = hover;
+          if (refInsideBlock()) { invalidate(); return; }
+          showLine(rect.top);
+        } else {
+          const b = collectBlockAny(hover);
+          dropRef = b[b.length - 1].nextSibling;
+          if (refInsideBlock()) { invalidate(); return; }
+          showLine(rect.bottom);
+        }
+      }
+    }
+
+    // 포인터가 뷰포트 상/하단 가까이면 근접도에 비례한 속도로 계속 스크롤한다(먼 거리 이동용).
+    function manageAutoScroll() {
+      if (!dragRow) { stopAutoScroll(); return; }
+      const h = win.innerHeight || doc.documentElement.clientHeight;
+      let dir = 0, prox = 0;
+      if (lastY < EDGE) { dir = -1; prox = (EDGE - lastY) / EDGE; }
+      else if (lastY > h - EDGE) { dir = 1; prox = (lastY - (h - EDGE)) / EDGE; }
+      if (!dir) { stopAutoScroll(); return; }
+      autoDir = dir;
+      autoStep = Math.max(1, Math.ceil(MAX_STEP * Math.min(1, prox)));
+      if (!autoRaf) {
+        const loop = () => {
+          if (!dragRow || !autoDir) { autoRaf = 0; return; }
+          win.scrollBy(0, autoDir * autoStep);
+          updateDrop();                 // 스크롤 후 표시선 재계산(고정된 lastX/lastY 기준)
+          autoRaf = win.requestAnimationFrame(loop);
+        };
+        autoRaf = win.requestAnimationFrame(loop);
+      }
+    }
+
+    function moveBlockBefore(block, ref) { for (const n of block) wrap.insertBefore(n, ref); }
+
+    function endDrag() {
+      if (!dragRow) return;
+      stopAutoScroll();
+      const kind = dragKind, rowEl = dragRow, block = dragBlock;
+      const valid = dropValid, ref = dropRef;
+      const msgId = dragMsgId, cutinId = dragCutinId;
+      rowEl.classList.remove('reorder-dragging');
+      if (line) line.style.display = 'none';
+      dragRow = null; dragKind = null; dragBlock = null; dragBlockSet = null;
+      dropRef = null; dropValid = false; dragMsgId = null; dragCutinId = null;
+      if (!valid || !wrap) return;
+      const esc = (s) => (win.CSS && win.CSS.escape) ? win.CSS.escape(s) : s;
+
+      let changed = false;
+      if (kind === 'msg') {
+        // 이 메시지에 붙어 있던 이미지들(이동 후 위치에 따라 앵커를 다시 계산할 대상)
+        const ownIds = cutins.filter(c => c.afterId === msgId).map(c => String(c.id));
+        moveBlockBefore(block, ref);                         // 메시지 한 줄만 이동(딸린 이미지는 남음)
+        // 메시지 순서를 DOM(이동 결과)에 맞춘다 — 위 메시지 뒤로. 순서가 그대로면 no-op.
+        const prev = prevMessageRow(rowEl);
+        moveMessage(msgId, prev ? prev.getAttribute('data-mid') : TOP);
+        // 이 메시지의 이미지들: 새 DOM 위치 기준으로 앵커를 다시 잡는다.
+        //  · 메시지가 이미지 위로 갔으면 이미지는 그대로 메시지에 붙고,
+        //  · 메시지가 이미지 아래로 내려갔으면 그 이미지는 '이전 메시지'로 앵커된다.
+        const affected = new Set([msgId]);
+        ownIds.forEach(id => {
+          const node = wrap.querySelector('.gap.cutin[data-cutin-id="' + esc(id) + '"]');
+          const c = cutins.find(x => String(x.id) === id);
+          if (!node || !c) return;
+          c.afterId = anchorMessageId(node);
+          affected.add(c.afterId);
+        });
+        affected.forEach(a => reorderCutinGroup(a, cutinIdsForAnchorInDom(a)));
+        changed = true;
+      } else {
+        // 컷인: DOM 이동 후 새 위치의 위 메시지로 afterId·형제 순서를 재계산
+        moveBlockBefore(block, ref);
+        const newAfter = anchorMessageId(rowEl);
+        const c = cutins.find(x => String(x.id) === String(cutinId));
+        if (c) c.afterId = newAfter;
+        reorderCutinGroup(newAfter, cutinIdsForAnchorInDom(newAfter));
+        changed = true;
+      }
+      if (changed) {
+        orderDirty = true;                          // 컷인 앵커 속성이 낡음(다음 컷인 모드 진입 때 재렌더)
+        els.preview.dataset.html = buildDocument();     // 다운로드·복사용 HTML 을 새 순서로 갱신(문자열만)
+      }
+    }
+
+    // 현재 DOM 에서 afterId 그룹에 속한 컷인 id 목록(위→아래 순)
+    function cutinIdsForAnchorInDom(afterId) {
+      const ids = [];
+      wrap.querySelectorAll('.gap.cutin[data-cutin-id]').forEach(node => {
+        if (anchorMessageId(node) === afterId) ids.push(node.getAttribute('data-cutin-id'));
+      });
+      return ids;
+    }
+
+    // 핸들 pointerdown 만 드래그 시작(이벤트 위임 — 행 수가 많아도 리스너 하나).
+    doc.addEventListener('pointerdown', (e) => {
+      if (!reorderMode) return;
+      const handle = e.target && e.target.closest ? e.target.closest('.reorder-handle') : null;
+      if (!handle) return;
+      const row = handle.closest('.gap');
+      if (!row || !wrap) return;
+      e.preventDefault();
+      dragRow = row;
+      dragKind = row.hasAttribute('data-mid') ? 'msg' : 'cutin';
+      dragMsgId = dragKind === 'msg' ? row.getAttribute('data-mid') : null;
+      dragCutinId = dragKind === 'cutin' ? row.getAttribute('data-cutin-id') : null;
+      dragBlock = collectBlockAny(row);            // 자기 한 줄만(메시지는 딸린 컷인 제외)
+      dragBlockSet = new Set(dragBlock);
+      dropRef = null; dropValid = false;
+      lastX = e.clientX; lastY = e.clientY;
+      row.classList.add('reorder-dragging');
+      try { handle.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+      updateDrop();
+    });
+
+    doc.addEventListener('pointermove', (e) => {
+      if (!dragRow) return;
+      lastX = e.clientX; lastY = e.clientY;
+      if (moveRaf) return;                        // rAF 로 1프레임당 한 번만 계산
+      moveRaf = win.requestAnimationFrame(() => {
+        moveRaf = 0;
+        updateDrop();
+        manageAutoScroll();
+      });
+    });
+
+    doc.addEventListener('pointerup', endDrag);
+    doc.addEventListener('pointercancel', endDrag);
   }
 
   // ── 이벤트 ───────────────────────────────────────────────────
@@ -807,6 +1183,7 @@ body.insert-mode .cutin-del{ display: block; }
   els.modeText.addEventListener('click', () => setMode('text'));
   els.downloadBtn.addEventListener('click', download);
   els.copyBtn.addEventListener('click', copy);
+  els.reorderToggle.addEventListener('click', toggleReorderMode);
   // 분할 버튼 — 왼쪽(컷인 삽입) 은 삽입 모드 토글, 오른쪽(편집 아이콘) 은 ImgBB 키 설정 모달.
   els.cutinToggle.addEventListener('click', toggleInsertMode);
   els.imgbbSettingsBtn.addEventListener('click', openImgbbModal);

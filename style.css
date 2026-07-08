@@ -8,6 +8,7 @@
   --border: #3a3b42;
   --focus-border: #fff;   /* 입력칸 포커스 테두리(어두운 모드=흰색) */
   --strong: #fff;         /* 강조 텍스트·버튼(빨강 대신): 어두운 모드=흰색 */
+  --hl: rgba(220, 0, 78, .42);   /* 형광펜 하이라이트(accent 반투명, 어두운 배경용) */
 }
 
 /* 밝은 모드 — data-theme="light" 일 때 변수만 덮어써 전체 UI 색을 바꾼다. */
@@ -21,6 +22,7 @@
   --border: #d8dbe0;
   --focus-border: #000;   /* 밝은 모드=검은색 */
   --strong: #000;         /* 밝은 모드=검은색 */
+  --hl: rgba(220, 0, 78, .30);   /* 형광펜 하이라이트 — 흰 배경에선 더 진해 보여 알파를 낮춘다 */
 }
 
 * { box-sizing: border-box; }
@@ -179,9 +181,15 @@ a#bookmarklet.dragging {
    (ID 선택자라 위 .btn.outline / .btn:hover 규칙을 우선순위로 덮는다.) */
 #searchBtn,
 #cutinBtn,
-#copyBtn { border-color: var(--strong); color: var(--strong); }
+#reorderToggle,
+#copyBtn,
+#imgbbClearBtn { border-color: var(--strong); color: var(--strong); }
 #searchBtn:hover,
-#copyBtn:hover { background: var(--strong); border-color: var(--strong); color: var(--bg); }
+#copyBtn:hover,
+#imgbbClearBtn:hover { background: var(--strong); border-color: var(--strong); color: var(--bg); }
+/* 순서 바꾸기 버튼 — hover, 그리고 모드 ON(.active) 이면 --strong 으로 채운다 */
+#reorderToggle:hover,
+#reorderToggle.active { background: var(--strong); border-color: var(--strong); color: var(--bg); }
 /* 컷인 버튼은 분할 버튼이라 컨테이너를 통째로 채우지 않는다. .btn.outline 의 hover·active
    빨강 배경을 id 우선순위로 눌러 항상 투명하게 두고, 테두리만 --strong 으로 유지한다.
    실제 채움은 안쪽 파트(.split-part)가 각자 처리한다. */
@@ -245,16 +253,33 @@ a#bookmarklet.dragging {
   pointer-events: none;
 }
 .opt-label {
+  position: relative;
+  isolation: isolate;   /* 자체 stacking context — 아래 ::before(z-index:-1)가 패널 배경 뒤로 빠지지 않게 */
   color: var(--muted);
-  transition: color .15s;
   user-select: none;
+  transition: color .15s;
 }
-/* 마우스 오버 시 글자색을 선명하게 + 밑줄까지 더해 피드백을 키운다 */
-.opt:hover .opt-label {
-  color: var(--text);
-  text-decoration: underline;
-  text-underline-offset: 3px;
+/* 형광펜 하이라이트 — 글씨보다 살짝 얇은 빨간 띠(반투명 accent --hl).
+   글자 뒤(z-index:-1)에 깔려 아래 글자가 비쳐 보이는 형광펜처럼 자연스럽다.
+   다크/라이트 배경 위에서 알파로 자연스럽게 배어난다.
+   평소엔 opacity 0 으로 숨겨 두고, hover 때 페이드 인 한다. */
+.opt-label::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 62%;
+  height: .72em;                 /* 글씨보다 살짝 얇게 */
+  transform: translateY(-50%);   /* 글자 아래쪽에 걸치게(형광펜 느낌) */
+  background: var(--hl);
+  opacity: 0;
+  z-index: -1;
+  pointer-events: none;
+  transition: opacity .2s ease;
 }
+/* 마우스 오버 시 글자색을 선명하게 + 형광펜 띠를 페이드 인 해 피드백을 준다 */
+.opt:hover .opt-label { color: var(--text); }
+.opt:hover .opt-label::before { opacity: 1; }
 .opt input[type="checkbox"]:checked + .opt-label {
   color: var(--accent);
   font-weight: 700;

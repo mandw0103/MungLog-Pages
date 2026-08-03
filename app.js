@@ -211,10 +211,12 @@
   }
 
   // ── 필터 적용 ────────────────────────────────────────────────
-  // 본문(대사)이 비어 출력할 게 없는 로그(예: 편집으로 내용이 지워진 메시지)는
-  // 출력에서 통째로 제외한다. 주사위/판정은 굴림 결과가 곧 내용이므로 비어도 남긴다.
+  // 편집으로 내용이 지워져 출력할 게 없는 로그는 출력에서 통째로 제외한다.
+  // 판정 기준은 edited — 편집한 적 없는 로그는 본문이 공백뿐이어도 의도한 연출(빈 줄)이므로
+  // 남긴다. 주사위/판정은 굴림 결과가 곧 내용이므로 비어도 남긴다.
   function isEmptyLog(m) {
     if (rollInfo(m)) return false;
+    if (!m.edited) return false;
     return String(m.text ?? '').trim() === '';
   }
 
@@ -459,19 +461,22 @@ ${HR}`;
     const bandEl = opt.preview ? '<div id="cutin-band">+ 여기에 컷인 삽입</div>' : '';
     // 순서 바꾸기 드래그 중 삽입 위치를 보여주는 가로선(미리보기 전용, JS 가 위치를 옮긴다)
     const lineEl = opt.preview ? '<div id="reorder-line"></div>' : '';
-    // 사용자가 고른 배경·글자 색(--log-bg/--log-fg)을 :root 에 심어 로그 전체에 적용.
+    // 사용자가 고른 배경·글자 색(--log-bg/--log-fg)을 .ccfolia_wrap 에 심어 로그 전체에 적용.
+    // (:root 가 아니라 래퍼에 두는 이유는 OUTPUT_CSS 주석 참고 — 붙여넣기 시 전역 오염 방지.
+    //  변수는 하위로 상속되므로 로그 안 인라인 style 의 var() 는 그대로 동작한다.)
     // input[type=color] 값은 항상 #rrggbb 지만, 방어적으로 safeColor 로 걸러 기본값으로 보정.
     const logBg = safeColor(els.optBg && els.optBg.value) || '#474747';
     const logFg = safeColor(els.optFg && els.optFg.value) || '#dddddd';
     const logFg2 = safeColor(els.optFg2 && els.optFg2.value) || '#9d9d9d';
     // 구분선(HR)은 글자2 색을 옅게(알파 0.25) 깐다 — 불투명 글자2면 선이 너무 진해지므로.
     const logLine = hexToRgba(logFg2, 0.25) || 'rgba(255, 255, 255, 0.08)';
-    const colorVars = `\n:root { --log-bg: ${logBg}; --log-fg: ${logFg}; --log-fg2: ${logFg2}; --log-line: ${logLine}; }`;
-    // 미리보기는 사이트 테마(어두운/밝은)에 맞춰 바깥 여백·스크롤바를 통일하고,
-    // 다운로드 HTML 은 페이지 전체를 고른 배경색으로 채워(여백 없이) 자기완결로 만든다.
+    const colorVars = `\n.ccfolia_wrap { --log-bg: ${logBg}; --log-fg: ${logFg}; --log-fg2: ${logFg2}; --log-line: ${logLine}; }`;
+    // 미리보기(iframe)는 우리 문서라 페이지 전체를 사이트 테마에 맞춰 칠해 바깥 여백·스크롤바를
+    // 통일한다. 반면 다운로드 HTML 은 블로그 글에 붙여넣을 수 있어 html·body 를 건드리지 않는다
+    // (배경은 .ccfolia_wrap 이 스스로 칠하므로 로그 영역 색은 그대로다).
     const themeChrome = opt.preview
       ? `\n:root { color-scheme: ${(view && view.theme) === 'light' ? 'light' : 'dark'}; }\nhtml, body { background: ${(view && view.bg) || '#2c2c2c'}; }`
-      : `\nhtml, body { background: var(--log-bg, #474747); }`;
+      : '';
     return `
     <html>
       <head>
@@ -492,20 +497,25 @@ ${rows}
   }
 
   // 결과물에 인라인으로 박히는 CSS (자기완결 HTML)
+  //
+  // 모든 선택자를 .ccfolia_wrap 안으로 한정한다. 이 HTML 은 블로그(티스토리 등) 글에
+  // 통째로 붙여넣는 용도로도 쓰이는데, 그때 <html>·<body> 태그만 사라지고 <style> 은
+  // 그대로 살아남아 블로그 페이지 전체에 적용된다. p·span·b 같은 요소 선택자를 그대로
+  // 두면 블로그 본문의 문단 여백·글씨 크기·굵은 글씨까지 덮어써 버린다.
   const OUTPUT_CSS = `
 
-p{
+.ccfolia_wrap p{
   margin: 0;
 }
 
-  span {
+  .ccfolia_wrap span {
     font-size: 14px;
     font-family: "Roboto", "Helvetica", "Arial", sans-serif;
     line-height: 1.5;
   }
 
   /* 시간(caption): 이름 옆 회색 소형 텍스트 */
-  b {
+  .ccfolia_wrap b {
     color: var(--log-fg2, #757575);
     font-size: 12px;
     font-weight: 400;
@@ -515,11 +525,12 @@ p{
 .ccfolia_wrap {
   position: relative;
   padding: 10px !important;
-  /* 배경·글자 색은 사용자가 고른 값(--log-bg/--log-fg)을 따르고, 없으면 기본값. */
+  /* 배경·글자 색은 사용자가 고른 값(--log-bg/--log-fg)을 따르고, 없으면 기본값.
+     변수도 여기 심는다 — :root 에 두면 붙여넣은 블로그 문서 전체를 오염시킨다. */
   background-color: var(--log-bg, #474747);   /* 불투명 — 테마별 backdrop 이 비쳐 색이 달라지지 않게 */
   color: var(--log-fg, #dddddd);
 }
-.msg_container {
+.ccfolia_wrap .msg_container {
   flex-shrink: 0;
   width: 40px;
   height: 40px;
@@ -531,16 +542,16 @@ p{
   justify-content: center;
 }
 
-.msg_container img {
+.ccfolia_wrap .msg_container img {
 width: 40px;
 }
 
-span:before {
+.ccfolia_wrap span:before {
   display: none !important ;
 }
 
 
-.gap{
+.ccfolia_wrap .gap{
 gap: 16px;
 display: flex;
 -webkit-box-pack: start;
@@ -802,7 +813,12 @@ body.reorder-mode .reorder-handle{ display: block; }
       method: 'POST',
       body: form,
     });
-    if (!res.ok) throw new Error('ImgBB 업로드 실패 (' + res.status + ')');
+    if (!res.ok) {
+      // ImgBB 가 알려주는 실제 사유(예: Invalid API v1 key, 용량 초과)를 함께 노출한다.
+      let msg = '';
+      try { const e = await res.json(); msg = (e && e.error && e.error.message) || ''; } catch (e) {}
+      throw new Error('ImgBB 업로드 실패 (' + res.status + ')' + (msg ? ': ' + msg : ''));
+    }
     const j = await res.json();
     const url = j && j.data && (j.data.url || j.data.display_url);
     if (!url) throw new Error('ImgBB 응답에 링크가 없습니다.');

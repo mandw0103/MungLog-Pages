@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>코코포리아 로그 변환기</title>
   <link rel="icon" type="image/png" href="icon.png">
-  <link rel="stylesheet" href="style.css?v=0216b0f">
+  <link rel="stylesheet" href="style.css?v=7242f62">
   <!-- 테마 초기 적용(깜빡임 방지) + 토글. 저장된 값이 없으면 시스템 설정을 따른다. -->
   <script>
     (function () {
@@ -101,18 +101,39 @@
 
     <!-- 로그의 생김새(색)만 모은 패널. 무엇을 출력할지(옵션)·결과물(미리보기)과 분리한다. -->
     <section class="panel" id="stylePanel" hidden>
-      <h2>🎨 스타일</h2>
+      <!-- 제목 줄 — 기본값은 제목 바로 오른쪽, 적용은 줄 오른쪽 끝(결과 패널과 같은 배치) -->
+      <div class="panel-head">
+        <h2>🎨 스타일</h2>
+        <button type="button" id="resetColors" class="btn outline" title="기본 색으로 되돌리고 바로 적용">기본값</button>
+        <div class="actions">
+          <button type="button" id="applyColors" class="btn outline" title="고른 색을 결과에 반영" disabled>적용</button>
+        </div>
+      </div>
       <div class="colors">
-        <label class="color-opt">배경 <input type="color" id="optBg" class="color-in" value="#474747"></label>
-        <label class="color-opt">글자 <input type="color" id="optFg" class="color-in" value="#dddddd"></label>
-        <label class="color-opt" title="아바타 안 글자·날짜/시각·메인 외 탭 내용 색상">글자2 <input type="color" id="optFg2" class="color-in" value="#9d9d9d"></label>
-        <button type="button" id="resetColors" class="btn outline" title="기본 배경·글자 색으로 되돌리기">기본값</button>
+        <label class="color-opt"><input type="color" id="optBg" class="color-in" value="#474747"><span class="color-name">배경</span></label>
+        <label class="color-opt"><input type="color" id="optFg" class="color-in" value="#dddddd"><span class="color-name">메인</span></label>
+        <label class="color-opt" title="아바타 안 글자(판정·정보·시스템)·메인 외 탭 내용·구분선 색상"><input type="color" id="optFg2" class="color-in" value="#9d9d9d"><span class="color-name">정보·기타</span></label>
+        <label class="color-opt" title="이름 옆에 붙는 날짜·시각 색상"><input type="color" id="optTimeColor" class="color-in" value="#757575"><span class="color-name">시간</span></label>
+      </div>
+      <!-- 판정 등급 색 — 왼쪽부터 대성공·대단한 성공·어려운 성공·보통 성공·실패·대실패 순.
+           대성공/대실패를 고치면 성공 넷은 대성공 색에서, 실패 둘은 대실패 색에서 갈라져
+           한 단계씩 어두워지도록 자동으로 채워진다(가운데 네 칸도 직접 고를 수 있다).
+           대실패는 윗줄 '시간'과 같은 열에 오도록 가운데 띠의 너비를 두 열 폭으로 고정한다. -->
+      <div class="colors">
+        <label class="color-opt" title="판정 최고 등급 색. 대실패 색과의 사이를 나눠 중간 등급 색이 자동으로 정해집니다"><input type="color" id="optCrit" class="color-in" value="#56fc9a"><span class="color-name">대성공</span></label>
+        <div class="roll-mid">
+          <input type="color" id="optMid2" class="color-in roll-step" value="#0be263">
+          <input type="color" id="optMid3" class="color-in roll-step" value="#0c9946">
+          <input type="color" id="optMid4" class="color-in roll-step" value="#0c6832">
+          <input type="color" id="optMid5" class="color-in roll-step" value="#cc0606">
+        </div>
+        <label class="color-opt" title="판정 최하 등급 색. 대성공 색과의 사이를 나눠 중간 등급 색이 자동으로 정해집니다"><input type="color" id="optFumble" class="color-in" value="#ff2d2d"><span class="color-name">대실패</span></label>
       </div>
     </section>
 
     <section class="panel" id="outputPanel" hidden>
       <!-- 제목 줄 — 되돌리기는 제목 바로 오른쪽, 나머지 버튼은 줄 오른쪽 끝에 정렬 -->
-      <div class="output-head">
+      <div class="panel-head">
         <h2>🎬 결과</h2>
         <button type="button" id="undoBtn" class="btn outline icon" aria-label="되돌리기" title="되돌리기" disabled>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
@@ -126,7 +147,7 @@
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
             </button>
           </span>
-          <button type="button" id="reorderToggle" class="btn outline" title="로그를 드래그해 순서 바꾸기">순서 바꾸기</button>
+          <button type="button" id="reorderToggle" class="btn outline" title="로그를 드래그해 순서 바꾸기 (로그를 눌러 여러 개 고르면 함께 이동)">순서 바꾸기</button>
           <button type="button" id="deleteToggle" class="btn outline icon" aria-label="로그 삭제" title="로그 삭제">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
           </button>
@@ -169,6 +190,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=0216b0f"></script>
+  <script src="app.js?v=7242f62"></script>
 </body>
 </html>

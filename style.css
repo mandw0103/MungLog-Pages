@@ -244,21 +244,46 @@ a#bookmarklet.dragging {
 }
 /* 출력 색상(배경·글자·글자2·기본값) 선택 — '스타일' 패널의 내용.
    패널 제목(.panel h2)이 아래 여백을 이미 갖고 있어 자체 마진은 두지 않는다. */
-.colors { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; }
+/* 한 칸(.color-opt)의 폭을 세 조각으로 쪼개 변수로 둔다 — 두 줄의 열을 맞추려면
+   판정 줄의 가운데 띠가 '두 칸 폭'을 정확히 차지해야 하고, 그 계산에 이 값들이 쓰인다.
+   이름 칸이 min-width 로 고정돼 있어 모든 칸의 실제 폭이 같다는 점이 전제다. */
+.colors {
+  --swatch-w: 46px;
+  --opt-gap: 7px;
+  --name-w: 5em;
+  --col-gap: 14px;
+  /* 열 하나에서 다음 열까지의 거리(칸 폭 + 칸 사이 간격) */
+  --col-pitch: calc(var(--swatch-w) + var(--opt-gap) + var(--name-w) + var(--col-gap));
+  /* 판정 미리보기 네모 하나에서 다음 네모까지의 거리 — 2열(메인)에서 3열(정보·기타)까지를
+     네모 4개가 3등분해 건너간다. */
+  --step-pitch: calc(var(--col-pitch) / 3);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px var(--col-gap);
+}
+/* 두 번째 줄(판정 등급 색)은 첫 줄과 같은 간격만큼 띄운다 */
+.colors + .colors { margin-top: 10px; }
 .color-opt {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--opt-gap);
   color: var(--muted);
   cursor: pointer;
   user-select: none;
+}
+/* 스와치가 앞, 이름이 뒤. 이름 칸의 최소 폭을 가장 긴 이름(날짜·시각)에 맞춰 고정해,
+   '배경'처럼 짧은 이름은 뒤쪽 여백이 늘어나며 스와치들이 일정한 간격으로 늘어선다. */
+.color-name {
+  min-width: var(--name-w);   /* 한글 4자 + 가운뎃점 실측(약 4.4em)에 여유를 둔 값 */
+  white-space: nowrap;
 }
 /* 색상 팔레트 스와치 — 버튼(.btn.outline)과 같은 높이·라운드·hover 로 맞춘다.
    테두리는 버튼과 같은 --border 로 두고(스와치 색이 주인공), hover 시 스와치 둘레 여백을
    같은 회색으로 채운다(버튼의 hover 채움과 동일한 반응).
    값은 항상 핵사(#rrggbb)라 색상 형식은 헥사만 쓰인다. */
 .color-in {
-  width: 46px;
+  width: var(--swatch-w);
   height: 36px;                  /* .btn(패딩 8px + 0.95rem·1.2 + 1px 테두리)과 같은 높이 */
   padding: 0;
   border: 1px solid var(--border);
@@ -271,6 +296,25 @@ a#bookmarklet.dragging {
 .color-in::-webkit-color-swatch-wrapper { padding: 4px; }
 .color-in::-webkit-color-swatch { border: 0; border-radius: 5px; }
 .color-in::-moz-color-swatch { border: 0; border-radius: 5px; }
+
+/* 중간 4등급(대단한·어려운·보통 성공, 실패) 색 띠.
+   양 끝을 바꾸면 자동으로 채워지지만, 각 칸을 직접 눌러 따로 고를 수도 있다.
+   자리를 두 기준에 맞춘다.
+     · 띠 전체 폭 = 두 칸 폭 → 대실패가 윗줄 '시간'과 같은 열에 선다.
+     · 네모 하나하나는 색상 팔레트와 같은 크기로, 첫 네모(대단한 성공)는 '메인' 열,
+       마지막 네모(실패)는 '정보·기타' 열의 팔레트 자리에 정확히 오게 한다.
+       두 열 사이를 3등분한 값(--step-pitch)이 네모 간 이동 거리다.
+   네모 4개는 띠의 왼쪽에만 놓이고 오른쪽 남는 자리는 비워 둔다(대실패 열을 밀지 않도록).
+   좁은 화면에서 줄이 접히면 정렬은 깨지지만 띠 자체는 그대로 보인다. */
+.roll-mid {
+  display: flex;
+  flex: none;               /* 폭이 곧 정렬이므로 줄어들지 않게 한다 */
+  gap: calc(var(--step-pitch) - var(--swatch-w));
+  width: calc(var(--col-pitch) * 2 - var(--col-gap));
+}
+/* 생김새·크기는 .color-in 을 그대로 쓰고, 여기선 줄어들지 않게만 못박는다
+   (폭이 곧 열 정렬이라 flex 가 임의로 줄이면 어긋난다). 등급명·헥사는 JS 가 title 로 붙인다. */
+.roll-step { flex: none; }
 
 .channels { margin-top: 16px; }
 /* "채널 필터" 라벨 — 활성 탭과 같은 스타일(흰색 볼드 + 빨간 밑줄) */
@@ -380,17 +424,17 @@ a#bookmarklet.dragging {
 /* 비어 있을 땐 레이아웃에서 빼, 빈 줄+간격 때문에 아래 range-info 위치가 밀리지 않게 한다 */
 .search-info:empty { display: none; }
 
-/* 출력 — 제목 줄. 되돌리기는 제목 바로 오른쪽에 붙이고, 나머지 액션(컷인 삽입·순서 바꾸기·
-   삭제·복사·다운로드)은 오른쪽 끝으로 민다. 폭이 좁으면 액션 묶음만 아래 줄로 내려간다
+/* 패널 제목 줄(스타일·결과 공용). 보조 버튼(기본값·되돌리기)은 제목 바로 오른쪽에 붙이고,
+   주 액션 묶음(.actions)은 오른쪽 끝으로 민다. 폭이 좁으면 액션 묶음만 아래 줄로 내려간다
    (margin-left:auto 라 줄바꿈 뒤에도 오른쪽에 붙는다). */
-.output-head {
+.panel-head {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 10px 12px;
   margin-bottom: 14px;
 }
-.output-head h2 { margin: 0; }
+.panel-head h2 { margin: 0; }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-left: auto; }
 
 #preview {

@@ -13,6 +13,9 @@
   let orderDirty = false;    // 재정렬로 messages 순서가 바뀌어 미리보기 컷인 앵커 속성이 낡았는지
   let pendingAfterId = null; // 슬롯 클릭으로 고른 삽입 위치(파일 선택 대기)
   let cutinSeq = 0;          // 컷인 고유 id 카운터
+  // 순서 바꾸기에서 함께 옮길 로그들. 미리보기가 다시 그려져도 유지되도록 DOM 이 아니라
+  // 여기에 행 키('m:<메시지 _id>' · 'c:<컷인 id>')로 들고 있는다.
+  let selection = new Set();
   let preserveScroll = 0;    // 재렌더 시 유지할 미리보기 스크롤 위치
   let freshLoad = false;     // 새 로그를 받은 직후엔 스크롤을 맨 위로
   const TOP = '__top__';     // 맨 위(첫 메시지 앞) 앵커
@@ -39,10 +42,30 @@
   // 기본값은 출력 CSS 의 폴백(--log-bg/--log-fg)과 같은 값이어야 '기본' 상태가 정확히 일치한다.
   const LOG_BG_LS = 'trpglog-log-bg';
   const LOG_FG_LS = 'trpglog-log-fg';
-  const LOG_FG2_LS = 'trpglog-log-fg2';   // 글자2: 아바타 안 글자·날짜/시각·메인 외 탭 내용
+  const LOG_FG2_LS = 'trpglog-log-fg2';   // 글자2: 아바타 안 글자·메인 외 탭 내용·구분선
+  const LOG_TIME_LS = 'trpglog-log-time'; // 날짜·시각: 이름 옆 캡션(<b>)만
   const LOG_BG_DEFAULT = '#474747';
   const LOG_FG_DEFAULT = '#dddddd';
   const LOG_FG2_DEFAULT = '#9d9d9d';       // 정보 탭 원래 색(rgb 157) — 셋을 이 톤으로 통일
+  // 날짜·시각은 ccfolia 원본 캡션 색(rgb 117)을 그대로 쓴다 — 글자2 와 묶여 있던 동안엔
+  // 한 톤 밝은 값(#9d9d9d)으로 끌려갔지만, 분리했으니 원래 톤으로 되돌린다.
+  const LOG_TIME_DEFAULT = '#757575';
+
+  // 판정 등급 색 — 대성공(첫)부터 대실패(끝)까지 6단계.
+  // 양 끝을 고치면 사이 네 칸이 자동으로 다시 계산되고, 사이 칸도 직접 고를 수 있다.
+  // ROLL_KEYS 의 순서가 곧 등급 순서이며, rollInputs·RESULT_CLASS 와 순서를 맞춰야 한다.
+  const ROLL_STEPS = 6;
+  const ROLL_KEYS = ['crit', 'mid2', 'mid3', 'mid4', 'mid5', 'fumble'];
+  const ROLL_LS = ROLL_KEYS.map(k => 'trpglog-roll-' + k);
+  const ROLL_CRIT_DEFAULT = '#56fc9a';
+  const ROLL_FUMBLE_DEFAULT = '#ff2d2d';
+
+  // 결과에 '적용된' 색. 색상 선택기 값을 바로 읽지 않고 여기 담아 두는 이유는 이어 출력
+  // 범위(applied)와 같다 — 팔레트를 끄는 동안 매번 전체를 다시 그리면 로그가 길 때 매우
+  // 무겁다. '적용'을 눌러야 이 값이 갱신되고, 그때 한 번만 다시 그린다.
+  // 내용은 initColors() 가 저장값·기본값으로 채운다(색 변환 헬퍼가 아직 정의되기 전이라
+  // 여기서 계산할 수 없다). 그 전에 읽히더라도 각 항목이 기본값으로 폴백해 안전하다.
+  let appliedColors = {};
 
   const $ = (sel) => document.querySelector(sel);
 
@@ -56,7 +79,15 @@
     optBg: $('#optBg'),
     optFg: $('#optFg'),
     optFg2: $('#optFg2'),
+    optTimeColor: $('#optTimeColor'),
+    optCrit: $('#optCrit'),
+    optMid2: $('#optMid2'),
+    optMid3: $('#optMid3'),
+    optMid4: $('#optMid4'),
+    optMid5: $('#optMid5'),
+    optFumble: $('#optFumble'),
     resetColors: $('#resetColors'),
+    applyColors: $('#applyColors'),
     optStart: $('#optStart'),
     optEnd: $('#optEnd'),
     rangeInfo: $('#rangeInfo'),
@@ -89,6 +120,9 @@
     imgbbCloseBtn: $('#imgbbCloseBtn'),
   };
 
+  // 판정 등급 색 칸 — 대성공 → 대실패 순. ROLL_KEYS 와 순서가 같아야 한다.
+  const rollInputs = [els.optCrit, els.optMid2, els.optMid3, els.optMid4, els.optMid5, els.optFumble];
+
   // ── 유틸 ─────────────────────────────────────────────────────
   const escapeHtml = (s) => String(s ?? '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -100,16 +134,65 @@
     return /^(#[0-9a-fA-F]{3,8}|rgba?\([\d.,\s%]+\)|[a-zA-Z]+)$/.test(v) ? v : '';
   };
 
-  // 헥사(#rgb·#rrggbb)를 반투명 rgba 로 바꾼다(구분선을 글자2 색의 옅은 버전으로 쓰기 위함).
-  // 색상 팔레트 값은 항상 #rrggbb 라 파싱되며, 아니면 null 을 돌려 호출부가 기본선으로 폴백한다.
-  const hexToRgba = (hex, a) => {
+  // 헥사(#rgb·#rrggbb) → {r,g,b}. 색상 팔레트 값은 항상 #rrggbb 라 파싱되며,
+  // 아니면 null 을 돌려 호출부가 기본값으로 폴백한다.
+  const parseHex = (hex) => {
     const m = /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.exec(String(hex ?? '').trim());
     if (!m) return null;
     let h = m[1];
     if (h.length === 3) h = h.split('').map(c => c + c).join('');
     const n = parseInt(h, 16);
-    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+    return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
   };
+
+  // 반투명 rgba 로 바꾼다(구분선을 글자2 색의 옅은 버전으로, 판정 글로우를 그 색의 번짐으로).
+  const hexToRgba = (hex, a) => {
+    const c = parseHex(hex);
+    return c ? `rgba(${c.r}, ${c.g}, ${c.b}, ${a})` : null;
+  };
+
+  // ── HSL 변환 (판정 등급 색 계산용) ──────────────────────────
+  // 등급 색은 기준색의 명도·채도만 낮춰 만든다. RGB 로 곧장 어둡게 하면 채널마다
+  // 줄어드는 비율이 달라 색이 틀어지는데(초록이 누렇게 뜨는 식), HSL 은 색상(H)을
+  // 건드리지 않아 '같은 색 계열'이 그대로 유지된다.
+  function rgbToHsl({ r, g, b }) {
+    r /= 255; g /= 255; b /= 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    const d = max - min;
+    if (!d) return { h: 0, s: 0, l };               // 무채색 — 색상(h)은 의미 없음
+    const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    let h = max === r ? ((g - b) / d) % 6
+          : max === g ? (b - r) / d + 2
+          : (r - g) / d + 4;
+    h *= 60;
+    return { h: h < 0 ? h + 360 : h, s, l };
+  }
+
+  function hslToHex(h, s, l) {
+    h = ((h % 360) + 360) % 360;
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+    const m = l - c / 2;
+    const seg = Math.floor(h / 60);
+    const [r, g, b] = seg === 0 ? [c, x, 0] : seg === 1 ? [x, c, 0] : seg === 2 ? [0, c, x]
+                    : seg === 3 ? [0, x, c] : seg === 4 ? [x, 0, c] : [c, 0, x];
+    const hx = (v) => Math.round(Math.min(1, Math.max(0, v + m)) * 255).toString(16).padStart(2, '0');
+    return `#${hx(r)}${hx(g)}${hx(b)}`;
+  }
+
+  // 기준색에서 step 단계만큼 명도·채도를 낮춘다(step 0 이면 기준색 그대로).
+  // 한 단계마다 일정 비율로 곱해, 어떤 밝기의 색을 골라도 단계 차가 비슷하게 느껴진다.
+  // 채도는 명도보다 훨씬 완만하게 낮춘다 — 많이 깎으면 색 계열이 회색으로 바래 버린다.
+  // 파싱에 실패하면 null 을 돌려 호출부가 기본 색표로 폴백한다.
+  const ROLL_DIM_L = 0.70;   // 단계당 명도 배율 — 작을수록 단계마다 더 어두워진다
+  const ROLL_DIM_S = 0.94;   // 단계당 채도 배율
+  function dimColor(hex, step) {
+    const c = parseHex(hex);
+    if (!c) return null;
+    const { h, s, l } = rgbToHsl(c);
+    return hslToHex(h, s * Math.pow(ROLL_DIM_S, step), l * Math.pow(ROLL_DIM_L, step));
+  }
 
   const fmtTime = (iso) => {
     if (!iso) return '';
@@ -143,6 +226,7 @@
     insertMode = false;
     reorderMode = false;
     deleteMode = false;
+    selection.clear();
     // 편집 이력도 비운다 — 예전 로그를 담고 있어 되돌리면 안 되므로.
     undoStack = [];
     uploadedSrc.clear();
@@ -372,6 +456,36 @@
     return cls;
   }
 
+  // ── 판정 등급 색(rs1~rs6) ───────────────────────────────────
+  // 등급 이름(대성공 → 대실패). RESULT_CLASS 의 나열 순서가 곧 등급 순서다.
+  const ROLL_LABELS = Object.keys(RESULT_CLASS);
+
+  // i 번째 등급의 '자동 계산' 색.
+  // 성공 네 등급은 대성공 색에서, 실패 두 등급은 대실패 색에서 갈라져 한 단계씩 어두워진다.
+  // 색상(H)은 건드리지 않으므로 성공은 첫 색 계열, 실패는 둘째 색 계열이 그대로 유지된다.
+  //   대성공 ─▶ 대단한 ─▶ 어려운 ─▶ 보통     실패 ◀─ 대실패
+  //   (원색)                       (가장 어두움)  (원색)
+  const ROLL_SUCCESS_STEPS = 4;   // 대성공·대단한 성공·어려운 성공·보통 성공
+  function rollAuto(crit, fumble, i) {
+    const success = i < ROLL_SUCCESS_STEPS;
+    // 실패 계열은 목록의 끝(대실패)이 원색이라, 끝에서부터 거꾸로 단계를 센다.
+    return success ? dimColor(crit, i) : dimColor(fumble, ROLL_STEPS - 1 - i);
+  }
+
+  // 고른 여섯 색을 등급별 CSS 규칙으로 펼친다.
+  // 대성공·대실패에만 자기 색의 글로우(text-shadow)를 얹어 크리티컬/펌블을 강조한다.
+  function rollColorCss(list) {
+    let css = '';
+    for (let i = 0; i < ROLL_STEPS; i++) {
+      const c = safeColor(list[i]) || rollAuto(ROLL_CRIT_DEFAULT, ROLL_FUMBLE_DEFAULT, i);
+      // 글로우는 색을 헥사로 읽을 수 있을 때만 — 못 읽으면 규칙을 아예 넣지 않는다.
+      const halo = i === 0 ? hexToRgba(c, 0.8) : i === ROLL_STEPS - 1 ? hexToRgba(c, 0.85) : null;
+      const glow = halo ? ` text-shadow: ${halo} 0px 0px ${i === 0 ? 5 : 6}px;` : '';
+      css += `\n.ccfolia_wrap .rs${i + 1}{ color: ${c}; font-size: 15px; font-weight: bold;${glow} }`;
+    }
+    return css;
+  }
+
   // 위에서 모은 이름 색들을 CSS 규칙으로 펼친다(행을 다 만든 뒤 호출해야 한다).
   function nameColorCss(opt) {
     let css = '';
@@ -559,6 +673,8 @@ ${HR}`;
     const rows = buildRows(items, opt);
     // 행을 다 만든 뒤라야 등장한 이름 색이 모두 모여 있다.
     const nameCss = nameColorCss(opt);
+    // 판정 등급 색(.rs1~.rs6) — 적용된 여섯 색을 그대로 규칙으로 편다.
+    const rollCss = rollColorCss(ROLL_KEYS.map(k => appliedColors[k]));
     const extraCss = opt.preview ? PREVIEW_CSS : '';
     // 마우스에 가까운 경계에 띄울 삽입 슬롯(미리보기 전용, JS 가 위치를 옮긴다)
     const bandEl = opt.preview ? '<div id="cutin-band">+ 여기에 컷인 삽입</div>' : '';
@@ -567,13 +683,16 @@ ${HR}`;
     // 사용자가 고른 배경·글자 색(--log-bg/--log-fg)을 .ccfolia_wrap 에 심어 로그 전체에 적용.
     // (:root 가 아니라 래퍼에 두는 이유는 OUTPUT_CSS 주석 참고 — 붙여넣기 시 전역 오염 방지.
     //  변수는 하위로 상속되므로 로그 안 인라인 style 의 var() 는 그대로 동작한다.)
+    // 값은 '적용'된 색(appliedColors)에서 읽는다 — 팔레트를 만지작거리는 중에 다른 이유로
+    // 재렌더가 걸려도, 아직 적용하지 않은 색이 결과에 새어 들어가지 않는다.
     // input[type=color] 값은 항상 #rrggbb 지만, 방어적으로 safeColor 로 걸러 기본값으로 보정.
-    const logBg = safeColor(els.optBg && els.optBg.value) || '#474747';
-    const logFg = safeColor(els.optFg && els.optFg.value) || '#dddddd';
-    const logFg2 = safeColor(els.optFg2 && els.optFg2.value) || '#9d9d9d';
+    const logBg = safeColor(appliedColors.bg) || LOG_BG_DEFAULT;
+    const logFg = safeColor(appliedColors.fg) || LOG_FG_DEFAULT;
+    const logFg2 = safeColor(appliedColors.fg2) || LOG_FG2_DEFAULT;
+    const logTime = safeColor(appliedColors.time) || LOG_TIME_DEFAULT;
     // 구분선(HR)은 글자2 색을 옅게(알파 0.25) 깐다 — 불투명 글자2면 선이 너무 진해지므로.
     const logLine = hexToRgba(logFg2, 0.25) || 'rgba(255, 255, 255, 0.08)';
-    const colorVars = `\n.ccfolia_wrap { --log-bg: ${logBg}; --log-fg: ${logFg}; --log-fg2: ${logFg2}; --log-line: ${logLine}; }`;
+    const colorVars = `\n.ccfolia_wrap { --log-bg: ${logBg}; --log-fg: ${logFg}; --log-fg2: ${logFg2}; --log-time: ${logTime}; --log-line: ${logLine}; }`;
     // 미리보기(iframe)는 우리 문서라 페이지 전체를 사이트 테마에 맞춰 칠해 바깥 여백·스크롤바를
     // 통일한다. 반면 다운로드 HTML 은 블로그 글에 붙여넣을 수 있어 html·body 를 건드리지 않는다
     // (배경은 .ccfolia_wrap 이 스스로 칠하므로 로그 영역 색은 그대로다).
@@ -585,7 +704,7 @@ ${HR}`;
       <head>
       <meta charset="UTF-8">
         <style>
-${OUTPUT_CSS}${nameCss}${extraCss}${colorVars}${themeChrome}
+${OUTPUT_CSS}${rollCss}${nameCss}${extraCss}${colorVars}${themeChrome}
         </style>
       </head>
       <body>
@@ -618,9 +737,9 @@ ${rows}
     line-height: 1.5;
   }
 
-  /* 시간(caption): 이름 옆 회색 소형 텍스트 */
+  /* 시간(caption): 이름 옆 회색 소형 텍스트 — 색은 전용 변수(--log-time)로 따로 고른다 */
   .ccfolia_wrap b {
-    color: var(--log-fg2, #757575);
+    color: var(--log-time, #757575);
     font-size: 12px;
     font-weight: 400;
     font-family: "Roboto", "Helvetica", "Arial", sans-serif;
@@ -706,17 +825,10 @@ background-color: transparent;
 .ccfolia_wrap .cutin img{ max-width: 100%; border-radius: 5px; display: block; }
 .ccfolia_wrap .cutin-wait{ padding: 24px; color: rgb(200, 160, 175); font-size: 14px; }
 
-/* 판정 결과 — 성공은 초록 계열(등급이 높을수록 밝고 선명), 실패는 빨강 계열.
-   대성공·대실패는 글로우(text-shadow)로 크리티컬/펌블을 강조한다.
+/* 판정 결과 — 등급별 색(.rs1~.rs6)은 고른 두 색에서 계산해 rollColorCss 가 따로 붙인다.
    rs0 은 결과 키워드를 못 읽었을 때(시크릿 다이스를 가렸을 때 포함)의 기본값 —
    색을 따로 두지 않고 본문 색을 물려받아, 메인 외 탭에서 글자2 톤을 그대로 따른다. */
 .ccfolia_wrap .rs0{ font-size: 15px; font-weight: bold; }
-.ccfolia_wrap .rs1{ color: #56FC9A; font-size: 15px; font-weight: bold; text-shadow: rgba(86, 252, 154, 0.8) 0px 0px 5px; }
-.ccfolia_wrap .rs2{ color: #00FE02; font-size: 15px; font-weight: bold; }
-.ccfolia_wrap .rs3{ color: #00DC00; font-size: 15px; font-weight: bold; }
-.ccfolia_wrap .rs4{ color: #009A00; font-size: 15px; font-weight: bold; }
-.ccfolia_wrap .rs5{ color: #CE0004; font-size: 15px; font-weight: bold; }
-.ccfolia_wrap .rs6{ color: rgb(255, 45, 45); font-size: 15px; font-weight: bold; text-shadow: rgba(255, 45, 45, 0.85) 0px 0px 6px; }
 `;
 
   // 미리보기(삽입 모드)에서만 끼워 넣는 CSS — 삽입 슬롯·컷인 윤곽·삭제 버튼.
@@ -783,6 +895,9 @@ body.reorder-mode .reorder-handle{ display: block; }
 .reorder-handle:active{ cursor: grabbing; }
 /* 드래그 중인 원본 행은 흐리게 */
 .gap.reorder-dragging{ opacity: 0.4; }
+/* 함께 옮기려고 골라 둔 행 — 연하게 낮춰 선택된 것을 알린다.
+   순서 바꾸기 모드에서만 표시하고, 행 어디든(핸들 제외) 눌러 켜고 끈다. */
+body.reorder-mode .gap.reorder-selected{ opacity: 0.5; }
 /* 로그 삭제 — 각 로그 우측 ✕ 버튼. delete-mode 일 때만 보인다.
    순서 바꾸기 핸들과 같은 자리를 쓰며(두 모드는 상호 배타), 누르면 확인 없이 바로 지운다. */
 .row-del{
@@ -905,6 +1020,7 @@ body.delete-mode .row-del{ display: block; }
     reorderMode = mode === 'reorder';
     deleteMode = mode === 'delete';
     if (!insertMode) pendingAfterId = null;
+    if (!reorderMode) selection.clear();   // 순서 바꾸기를 벗어나면 선택도 푼다
     syncCutinUI();
     syncReorderUI();
     syncDeleteUI();
@@ -933,6 +1049,14 @@ body.delete-mode .row-del{ display: block; }
     applyPreviewModeClasses();
   }
 
+  // 미리보기 행(.gap)을 가리키는 키. 메시지는 _id, 컷인은 컷인 id 를 쓰며,
+  // 둘의 id 가 겹쳐도 섞이지 않게 앞에 종류를 붙인다.
+  function rowKey(row) {
+    if (row.hasAttribute('data-mid')) return 'm:' + row.getAttribute('data-mid');
+    const cid = row.getAttribute('data-cutin-id');
+    return cid == null ? null : 'c:' + cid;
+  }
+
   // ── 로그 삭제 모드 ──────────────────────────────────────────
   // 버튼 활성 표시를 현재 모드에 맞춘다.
   function syncDeleteUI() {
@@ -953,6 +1077,11 @@ body.delete-mode .row-del{ display: block; }
     doc.body.classList.toggle('insert-mode', insertMode);
     doc.body.classList.toggle('reorder-mode', reorderMode);
     doc.body.classList.toggle('delete-mode', deleteMode);
+    // 선택 표시는 DOM 이 아니라 selection 이 원본이라, 다시 그려진 문서에도 여기서 입힌다.
+    doc.querySelectorAll('.gap').forEach(row => {
+      const k = rowKey(row);
+      row.classList.toggle('reorder-selected', !!k && selection.has(k));
+    });
     if (!insertMode) {
       const band = doc.getElementById('cutin-band');
       if (band) band.style.display = 'none';   // 끄면 떠 있던 띠를 즉시 감춘다
@@ -1056,22 +1185,37 @@ body.delete-mode .row-del{ display: block; }
   }
 
   // ── 순서 바꾸기: 모델(messages) 이동 ─────────────────────────
-  // draggedId 메시지를 afterId(메시지 _id 또는 TOP) '바로 뒤'로 옮긴다.
+  // 이동 위치는 항상 '다른 메시지 기준'으로 잡는다. 미리보기에는 채널 필터·이어 출력 범위로
+  // 걸러진 메시지가 빠져 있어서, 화면의 위치를 전체 목록의 절대 위치(맨 앞 등)로 옮기면
+  // 범위 밖으로 튀어 출력에서 사라지기 때문이다. 이웃을 기준으로 삼으면 안 보이는
+  // 메시지들 사이에서도 제자리를 지킨다.
+  //
   // 실제로 순서가 바뀔 때만 true(무변화면 false → 호출부가 DOM·다운로드 갱신을 건너뜀).
+
+  // draggedId 를 afterId 메시지 '바로 뒤'로.
   function moveMessage(draggedId, afterId) {
     if (afterId === draggedId) return false;             // 자기 뒤로는 옮길 수 없음
     const from = messages.findIndex(m => m._id === draggedId);
     if (from < 0) return false;
-    if (afterId === TOP) {
-      if (from === 0) return false;                      // 이미 맨 앞
-    } else {
-      const ai = messages.findIndex(m => m._id === afterId);
-      if (ai < 0) return false;
-      if (ai === from - 1) return false;                 // 이미 afterId 바로 뒤 → 무변화
-    }
+    const ai = messages.findIndex(m => m._id === afterId);
+    if (ai < 0) return false;
+    if (ai === from - 1) return false;                   // 이미 afterId 바로 뒤 → 무변화
     const [item] = messages.splice(from, 1);
-    let to = 0;
-    if (afterId !== TOP) to = messages.findIndex(m => m._id === afterId) + 1;  // 제거 후 재계산
+    const to = messages.findIndex(m => m._id === afterId) + 1;   // 제거 후 재계산
+    messages.splice(to, 0, item);
+    return true;
+  }
+
+  // draggedId 를 beforeId 메시지 '바로 앞'으로. 화면 맨 위로 끌어올린 경우에 쓴다.
+  function moveMessageBefore(draggedId, beforeId) {
+    if (beforeId === draggedId) return false;
+    const from = messages.findIndex(m => m._id === draggedId);
+    if (from < 0) return false;
+    const bi = messages.findIndex(m => m._id === beforeId);
+    if (bi < 0) return false;
+    if (bi === from + 1) return false;                   // 이미 beforeId 바로 앞 → 무변화
+    const [item] = messages.splice(from, 1);
+    const to = messages.findIndex(m => m._id === beforeId);      // 제거 후 재계산
     messages.splice(to, 0, item);
     return true;
   }
@@ -1198,6 +1342,20 @@ body.delete-mode .row-del{ display: block; }
     return r ? r.getAttribute('data-mid') : TOP;
   }
 
+  // 이 노드보다 아래에 있는 첫 메시지 중, 이번에 함께 옮기지 않은 것의 _id(없으면 null).
+  // 화면 맨 위로 올린 로그를 어디 앞에 끼울지 정하는 기준이 된다. 같이 끌려온 줄은
+  // 아직 제자리를 못 잡았으므로 기준이 될 수 없어 건너뛴다.
+  function nextUnmovedMessageId(node, moved) {
+    let n = node.nextElementSibling;
+    while (n) {
+      if (n.classList && n.classList.contains('gap') && n.hasAttribute('data-mid') && !moved.has(n)) {
+        return n.getAttribute('data-mid');
+      }
+      n = n.nextElementSibling;
+    }
+    return null;
+  }
+
   // 같은 afterId 그룹의 컷인 배열 순서를 DOM 순서(idOrder)에 맞춰 재배치한다.
   // 그룹 밖 항목(숨은 컷인 포함)은 건드리지 않아, 필터로 안 보이는 컷인이 유실되지 않는다.
   function reorderCutinGroup(afterId, idOrder) {
@@ -1294,10 +1452,11 @@ body.delete-mode .row-del{ display: block; }
     // 드롭 때 모델과 DOM 을 함께 갱신한다(리로드 없음).
     const line = doc.getElementById('reorder-line');
     const wrap = doc.querySelector('.ccfolia_wrap');
-    let dragRow = null;                 // 드래그 중인 행(.gap)
-    let dragKind = null;                // 'msg' | 'cutin'
-    let dragMsgId = null, dragCutinId = null;
-    let dragBlock = null, dragBlockSet = null;   // 실제로 옮길 노드들(자기 한 줄)
+    let dragRow = null;                 // 드래그를 시작한 행(.gap)
+    let dragKind = null;                // 'msg' | 'cutin' | 'multi'(여러 줄 함께)
+    let dragMsgId = null;
+    let dragRows = null;                // 실제로 옮길 행들(위→아래 순)
+    let dragBlocks = null, dragBlockSet = null;  // 그 행들의 노드 묶음(행 + 뒤따르는 hr)
     let dropRef = null;                 // 이 노드 앞에 삽입(null=맨 끝)
     let dropValid = false;
     let lastX = 0, lastY = 0;
@@ -1366,7 +1525,9 @@ body.delete-mode .row-del{ display: block; }
           showLine(bottom);
         }
       } else {
-        // 컷인: 아무 행(메시지·컷인) 경계에나 스냅
+        // 컷인·여러 줄 함께: 아무 행(메시지·컷인) 경계에나 스냅.
+        // 메시지가 섞여 있어도 '메시지 블록' 경계로 제한하지 않는다 — 옮긴 뒤 컷인 앵커를
+        // DOM 에서 다시 읽으므로(endDrag) 어떤 줄 사이든 모델로 표현된다.
         const rect = hover.getBoundingClientRect();
         if (lastY < rect.top + rect.height / 2) {
           dropRef = hover;
@@ -1407,51 +1568,50 @@ body.delete-mode .row-del{ display: block; }
     function endDrag() {
       if (!dragRow) return;
       stopAutoScroll();
-      const kind = dragKind, rowEl = dragRow, block = dragBlock;
+      const rows = dragRows, blocks = dragBlocks, moved = new Set(dragRows);
       const valid = dropValid, ref = dropRef;
-      const msgId = dragMsgId, cutinId = dragCutinId;
-      rowEl.classList.remove('reorder-dragging');
+      rows.forEach(r => r.classList.remove('reorder-dragging'));
       if (line) line.style.display = 'none';
-      dragRow = null; dragKind = null; dragBlock = null; dragBlockSet = null;
-      dropRef = null; dropValid = false; dragMsgId = null; dragCutinId = null;
+      dragRow = null; dragKind = null; dragMsgId = null;
+      dragRows = null; dragBlocks = null; dragBlockSet = null;
+      dropRef = null; dropValid = false;
       if (!valid || !wrap) return;
       pushUndo();   // 모델을 건드리기 전에(아래 이동·재앵커 전에) 되돌릴 지점을 남긴다
-      const esc = (s) => (win.CSS && win.CSS.escape) ? win.CSS.escape(s) : s;
 
-      let changed = false;
-      if (kind === 'msg') {
-        // 이 메시지에 붙어 있던 이미지들(이동 후 위치에 따라 앵커를 다시 계산할 대상)
-        const ownIds = cutins.filter(c => c.afterId === msgId).map(c => String(c.id));
-        moveBlockBefore(block, ref);                         // 메시지 한 줄만 이동(딸린 이미지는 남음)
-        // 메시지 순서를 DOM(이동 결과)에 맞춘다 — 위 메시지 뒤로. 순서가 그대로면 no-op.
-        const prev = anchorMessageRow(rowEl);
-        moveMessage(msgId, prev ? prev.getAttribute('data-mid') : TOP);
-        // 이 메시지의 이미지들: 새 DOM 위치 기준으로 앵커를 다시 잡는다.
-        //  · 메시지가 이미지 위로 갔으면 이미지는 그대로 메시지에 붙고,
-        //  · 메시지가 이미지 아래로 내려갔으면 그 이미지는 '이전 메시지'로 앵커된다.
-        const affected = new Set([msgId]);
-        ownIds.forEach(id => {
-          const node = wrap.querySelector('.gap.cutin[data-cutin-id="' + esc(id) + '"]');
-          const c = cutins.find(x => String(x.id) === id);
-          if (!node || !c) return;
-          c.afterId = anchorMessageId(node);
-          affected.add(c.afterId);
-        });
-        affected.forEach(a => reorderCutinGroup(a, cutinIdsForAnchorInDom(a)));
-        changed = true;
-      } else {
-        // 컷인: DOM 이동 후 새 위치의 위 메시지로 afterId·형제 순서를 재계산
-        moveBlockBefore(block, ref);
-        const newAfter = anchorMessageId(rowEl);
-        const c = cutins.find(x => String(x.id) === String(cutinId));
-        if (c) c.afterId = newAfter;
-        reorderCutinGroup(newAfter, cutinIdsForAnchorInDom(newAfter));
-        changed = true;
-      }
-      if (changed) {
-        orderDirty = true;                          // 컷인 앵커 속성이 낡음(다음 컷인 모드 진입 때 재렌더)
-        els.preview.dataset.html = buildDocument();     // 다운로드·복사용 HTML 을 새 순서로 갱신(문자열만)
-      }
+      // 옮길 줄들을 위→아래 순서 그대로 드롭 위치에 넣는다(여러 줄이면 거기서 붙어 놓인다).
+      blocks.forEach(b => moveBlockBefore(b, ref));
+
+      // 이제 DOM 이 정답이다. 모델을 그 순서에 맞춘다.
+      // 메시지: 위에서부터 차례로 'DOM 상 바로 앞 메시지' 뒤로 옮긴다. 앞 줄이 먼저 자리를
+      // 잡으므로 뒷줄은 그 뒤에 이어 붙는다. 화면에 없는(필터·범위 밖) 메시지는 건드리지 않는다.
+      rows.forEach(row => {
+        if (!row.hasAttribute('data-mid')) return;
+        const id = row.getAttribute('data-mid');
+        const prev = anchorMessageRow(row);
+        if (prev) { moveMessage(id, prev.getAttribute('data-mid')); return; }
+        // 앞에 메시지가 없다 = 화면 맨 위로 올렸다. 전체 목록의 맨 앞이 아니라 '화면 첫
+        // 메시지 앞'에 넣어야 한다 — 이어 출력 범위를 걸어 뒀다면 전체 맨 앞은 범위 밖이라
+        // 방금 올린 로그가 출력에서 사라진다. 기준은 이번에 함께 옮기지 않은 첫 메시지다.
+        const nextId = nextUnmovedMessageId(row, moved);
+        if (nextId != null) moveMessageBefore(id, nextId);
+        // nextId 가 없다 = 화면의 메시지를 전부 옮겼다. 그러면 첫 줄은 제자리에 두고
+        // 나머지가 그 뒤로 이어 붙기만 하면 화면 순서가 그대로 맞는다.
+      });
+
+      // 컷인: 화면에 있는 컷인의 앵커·형제 순서를 DOM 에서 통째로 다시 읽는다.
+      // 옮긴 컷인뿐 아니라, 메시지가 위아래로 지나가며 소속이 바뀐 컷인까지 한 번에 맞는다.
+      // (화면 밖 컷인은 노드가 없어 손대지 않으므로 필터로 숨은 것도 안전하다.)
+      const anchors = new Set();
+      wrap.querySelectorAll('.gap.cutin[data-cutin-id]').forEach(node => {
+        const c = cutins.find(x => String(x.id) === node.getAttribute('data-cutin-id'));
+        if (!c) return;
+        c.afterId = anchorMessageId(node);
+        anchors.add(c.afterId);
+      });
+      anchors.forEach(a => reorderCutinGroup(a, cutinIdsForAnchorInDom(a)));
+
+      orderDirty = true;                          // 컷인 앵커 속성이 낡음(다음 컷인 모드 진입 때 재렌더)
+      els.preview.dataset.html = buildDocument();     // 다운로드·복사용 HTML 을 새 순서로 갱신(문자열만)
     }
 
     // 현재 DOM 에서 afterId 그룹에 속한 컷인 id 목록(위→아래 순)
@@ -1463,6 +1623,29 @@ body.delete-mode .row-del{ display: block; }
       return ids;
     }
 
+    // ── 여러 줄 선택 ────────────────────────────────────────────
+    // 순서 바꾸기 모드에서 행의 아무 곳(핸들 제외)이나 누르면 선택이 켜지고 꺼진다.
+    // 선택된 행은 연해지며, 그중 아무 핸들이나 끌면 선택된 줄이 한꺼번에 따라간다.
+    doc.addEventListener('click', (e) => {
+      if (!reorderMode) return;
+      const node = e.target && e.target.nodeType === 1 ? e.target : null;
+      if (!node || !node.closest) return;
+      if (node.closest('.reorder-handle')) return;   // 핸들은 드래그용이라 선택을 건드리지 않는다
+      const row = node.closest('.gap');
+      const key = row && rowKey(row);
+      if (!key) return;
+      if (selection.has(key)) selection.delete(key); else selection.add(key);
+      row.classList.toggle('reorder-selected', selection.has(key));
+    });
+
+    // 현재 문서에서 선택된 행들(위→아래 순). 선택은 키로 들고 있으므로 DOM 에서 훑어 모은다.
+    function selectedRowsInDom() {
+      return [...wrap.querySelectorAll('.gap')].filter(r => {
+        const k = rowKey(r);
+        return !!k && selection.has(k);
+      });
+    }
+
     // 핸들 pointerdown 만 드래그 시작(이벤트 위임 — 행 수가 많아도 리스너 하나).
     doc.addEventListener('pointerdown', (e) => {
       if (!reorderMode) return;
@@ -1471,15 +1654,19 @@ body.delete-mode .row-del{ display: block; }
       const row = handle.closest('.gap');
       if (!row || !wrap) return;
       e.preventDefault();
+      // 선택된 행의 핸들을 잡으면 선택 전체가, 아니면 그 한 줄만 움직인다.
+      const key = rowKey(row);
+      const picked = (key && selection.has(key)) ? selectedRowsInDom() : [];
+      const multi = picked.length > 1;
       dragRow = row;
-      dragKind = row.hasAttribute('data-mid') ? 'msg' : 'cutin';
+      dragRows = multi ? picked : [row];
+      dragKind = multi ? 'multi' : (row.hasAttribute('data-mid') ? 'msg' : 'cutin');
       dragMsgId = dragKind === 'msg' ? row.getAttribute('data-mid') : null;
-      dragCutinId = dragKind === 'cutin' ? row.getAttribute('data-cutin-id') : null;
-      dragBlock = collectBlockAny(row);            // 자기 한 줄만(메시지는 딸린 컷인 제외)
-      dragBlockSet = new Set(dragBlock);
+      dragBlocks = dragRows.map(collectBlockAny);   // 각자 한 줄만(메시지는 딸린 컷인 제외)
+      dragBlockSet = new Set(dragBlocks.flat());
       dropRef = null; dropValid = false;
       lastX = e.clientX; lastY = e.clientY;
-      row.classList.add('reorder-dragging');
+      dragRows.forEach(r => r.classList.add('reorder-dragging'));
       try { handle.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
       updateDrop();
     });
@@ -1501,27 +1688,95 @@ body.delete-mode .row-del{ display: block; }
 
   // ── 출력 색상 적용/저장 ──────────────────────────────────────
   const readLS = (k, def) => { try { return localStorage.getItem(k) || def; } catch (e) { return def; } };
+  // 색상 선택기 전체의 현재 값(아직 적용 전일 수 있다).
+  const readColorInputs = () => {
+    const c = {
+      bg: els.optBg.value,
+      fg: els.optFg.value,
+      fg2: els.optFg2.value,
+      time: els.optTimeColor.value,
+    };
+    ROLL_KEYS.forEach((k, i) => { c[k] = rollInputs[i].value; });
+    return c;
+  };
+
+  // 양 끝(대성공·대실패)에서 사이 네 칸을 다시 계산해 채운다.
+  // 직접 고쳐 둔 값이 있어도 덮어쓴다 — 여섯 색이 한 벌의 띠라, 끝 색을 바꾸면 띠 전체를
+  // 다시 긋는 편이 예측하기 쉽다(원하는 칸은 그 뒤에 다시 손보면 된다).
+  function fillRollMids() {
+    const crit = els.optCrit.value, fumble = els.optFumble.value;
+    for (let i = 1; i < ROLL_STEPS - 1; i++) {
+      const c = rollAuto(crit, fumble, i);
+      if (c) rollInputs[i].value = c;
+    }
+  }
+
+  // 각 판정 칸의 툴팁을 '등급명 · 색' 으로 맞춘다. 사이 네 칸은 이름표가 없어(자리가 없다)
+  // 어느 등급인지 알 길이 툴팁뿐이다.
+  function syncRollTitles() {
+    rollInputs.forEach((el, i) => { el.title = `${ROLL_LABELS[i] || ''} · ${el.value}`; });
+  }
+
   // 저장된 색을 색상 선택기에 채운다(없으면 기본값). 첫 렌더 전에 한 번 호출한다.
+  // 저장돼 있던 색은 이미 '적용된' 색이므로 appliedColors 에도 그대로 넣는다.
   function initColors() {
     els.optBg.value = readLS(LOG_BG_LS, LOG_BG_DEFAULT);
     els.optFg.value = readLS(LOG_FG_LS, LOG_FG_DEFAULT);
     els.optFg2.value = readLS(LOG_FG2_LS, LOG_FG2_DEFAULT);
+    // 분리 전에 저장된 브라우저에는 시각 색이 없다. 그때 글자2 를 직접 바꿔 뒀다면 그 값을
+    // 이어받아 보이던 색을 지키고, 손댄 적이 없다면 새 기본값(ccfolia 원본 톤)으로 시작한다.
+    els.optTimeColor.value = readLS(LOG_TIME_LS, readLS(LOG_FG2_LS, '') || LOG_TIME_DEFAULT);
+    els.optCrit.value = readLS(ROLL_LS[0], ROLL_CRIT_DEFAULT);
+    els.optFumble.value = readLS(ROLL_LS[ROLL_STEPS - 1], ROLL_FUMBLE_DEFAULT);
+    // 사이 네 칸은 우선 양 끝에서 계산해 채우고, 직접 고쳐 저장해 둔 칸만 그 값으로 되살린다.
+    fillRollMids();
+    for (let i = 1; i < ROLL_STEPS - 1; i++) {
+      const saved = readLS(ROLL_LS[i], '');
+      if (saved) rollInputs[i].value = saved;
+    }
+    appliedColors = readColorInputs();
+    syncRollTitles();
+    syncApplyColorsUI();
   }
-  // 색을 바꾸면 저장하고 다시 그린다(미리보기·다운로드용 HTML 모두 새 색으로 갱신).
+
+  // 고른 색이 적용된 색과 다른지(=적용할 게 있는지).
+  function colorsDirty() {
+    const c = readColorInputs();
+    return Object.keys(c).some(k => c[k] !== appliedColors[k]);
+  }
+
+  // 적용할 게 없으면 '적용' 버튼을 흐리게 둬, 눌러야 반영된다는 것을 드러낸다.
+  // 색을 고르는 동안(input 이벤트)에도 호출되지만 재렌더가 없어 가볍다.
+  function syncApplyColorsUI() {
+    els.applyColors.disabled = !colorsDirty();
+  }
+
+  // '적용' — 고른 색을 결과에 반영하고 저장한다(미리보기·다운로드용 HTML 모두 새 색으로 갱신).
   // 색상 팔레트(input[type=color]) 값은 항상 핵사(#rrggbb)라 색상 형식은 헥사만 쓰인다.
-  function onColorChange() {
+  function applyColors() {
+    appliedColors = readColorInputs();
     try {
-      localStorage.setItem(LOG_BG_LS, els.optBg.value);
-      localStorage.setItem(LOG_FG_LS, els.optFg.value);
-      localStorage.setItem(LOG_FG2_LS, els.optFg2.value);
+      localStorage.setItem(LOG_BG_LS, appliedColors.bg);
+      localStorage.setItem(LOG_FG_LS, appliedColors.fg);
+      localStorage.setItem(LOG_FG2_LS, appliedColors.fg2);
+      localStorage.setItem(LOG_TIME_LS, appliedColors.time);
+      ROLL_KEYS.forEach((k, i) => localStorage.setItem(ROLL_LS[i], appliedColors[k]));
     } catch (e) { /* ignore */ }
+    syncApplyColorsUI();
     render();
   }
+
+  // '기본값' — 선택기를 기본 색으로 되돌리고 곧바로 적용한다(한 번의 재렌더).
   function resetColors() {
     els.optBg.value = LOG_BG_DEFAULT;
     els.optFg.value = LOG_FG_DEFAULT;
     els.optFg2.value = LOG_FG2_DEFAULT;
-    onColorChange();
+    els.optTimeColor.value = LOG_TIME_DEFAULT;
+    els.optCrit.value = ROLL_CRIT_DEFAULT;
+    els.optFumble.value = ROLL_FUMBLE_DEFAULT;
+    fillRollMids();          // 사이 네 칸도 자동 계산값으로 되돌린다
+    syncRollTitles();
+    applyColors();
   }
   initColors();
 
@@ -1537,10 +1792,14 @@ body.delete-mode .row-del{ display: block; }
   });
 
   [els.optTime, els.optSecret].forEach(c => c.addEventListener('change', render));
-  // 색상 선택기: 드래그로 색을 고르는 동안에도 즉시 반영되도록 input 이벤트 사용.
-  els.optBg.addEventListener('input', onColorChange);
-  els.optFg.addEventListener('input', onColorChange);
-  els.optFg2.addEventListener('input', onColorChange);
+  // 색상 선택기: 고르는 동안엔 '적용' 버튼 활성 여부만 갱신하고 결과는 건드리지 않는다.
+  // (색마다 전체를 다시 그리면 로그가 길 때 팔레트를 끄는 것조차 버벅인다.)
+  // 판정 양 끝을 바꾸면 사이 네 칸을 먼저 다시 계산한다 — 아래 공통 처리보다 앞서 걸어,
+  // 새로 채워진 값으로 툴팁·적용 버튼 상태가 잡히게 한다(결과 재렌더는 없다).
+  [els.optCrit, els.optFumble].forEach(el => el.addEventListener('input', fillRollMids));
+  [els.optBg, els.optFg, els.optFg2, els.optTimeColor, ...rollInputs].forEach(el =>
+    el.addEventListener('input', () => { syncRollTitles(); syncApplyColorsUI(); }));
+  els.applyColors.addEventListener('click', applyColors);
   els.resetColors.addEventListener('click', resetColors);
   // 범위는 '출력' 버튼을 눌러야 반영된다(입력 중 재렌더 없음). 네 입력칸 모두 Enter 로도 적용.
   els.applyBtn.addEventListener('click', applyRange);

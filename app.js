@@ -38,7 +38,7 @@
   // 기본값은 출력 CSS 의 폴백(--log-bg/--log-fg)과 같은 값이어야 '기본' 상태가 정확히 일치한다.
   const LOG_BG_LS = 'trpglog-log-bg';
   const LOG_FG_LS = 'trpglog-log-fg';
-  const LOG_FG2_LS = 'trpglog-log-fg2';   // 글자2: 아바타 안 글자·날짜/시각·정보 탭 내용
+  const LOG_FG2_LS = 'trpglog-log-fg2';   // 글자2: 아바타 안 글자·날짜/시각·메인 외 탭 내용
   const LOG_BG_DEFAULT = '#474747';
   const LOG_FG_DEFAULT = '#dddddd';
   const LOG_FG2_DEFAULT = '#9d9d9d';       // 정보 탭 원래 색(rgb 157) — 셋을 이 톤으로 통일
@@ -48,6 +48,7 @@
   const els = {
     loadInfo: $('#loadInfo'),
     optionsPanel: $('#optionsPanel'),
+    stylePanel: $('#stylePanel'),
     outputPanel: $('#outputPanel'),
     optTime: $('#optTime'),
     optSecret: $('#optSecret'),
@@ -120,6 +121,13 @@
   // 시스템 메시지: 스탯 변동 등(예: "[ 호은 ] HP : 20 → 19")
   const isSystem = (m) => m.type === 'system';
 
+  // 본문 색 — 메인 탭만 글자(--log-fg), 그 밖의 탭(정보·잡담·비밀 등)은 글자2(--log-fg2)로
+  // 한 톤 낮춰 메인 대사가 두드러지게 한다. 이름 색·시각은 각자 규칙을 그대로 쓰므로
+  // 여기서 바뀌는 건 본문뿐이다(본문 span 은 색을 따로 안 갖고 <p> 색을 물려받는다).
+  const bodyColor = (m) => (isMainChannel(channelKey(m))
+    ? 'var(--log-fg, rgb(221, 221, 221))'
+    : 'var(--log-fg2, rgb(157, 157, 157))');
+
   // ── 데이터 적용 (파일·postMessage 공통) ──────────────────────
   function applyData(data) {
     const list = Array.isArray(data) ? data : data && data.messages;
@@ -159,6 +167,7 @@
     syncReorderUI();
     buildChannelFilter();
     els.optionsPanel.hidden = false;
+    els.stylePanel.hidden = false;
     els.outputPanel.hidden = false;
     updateModeIndicator();   // 패널이 보이게 된 뒤 밑줄 위치를 잡는다
     freshLoad = true;   // 새 로그는 맨 위부터 보여준다(스크롤 복원 건너뜀)
@@ -397,7 +406,7 @@
     const timeTag = (opt && opt.time && m.createdAt) ? `<b> - ${escapeHtml(fmtTime(m.createdAt))}</b>` : '';
     return `    <div class="gap">
         <div class="msg_container"><div class="tag">판정</div></div>
-        <p style="color: var(--log-fg, rgb(221, 221, 221));">
+        <p style="color: ${bodyColor(m)};">
         <span class="${nameCls}">${escapeHtml(m.name || '이름없음')}</span>${timeTag}<span> <br> </span><span class="${resultCls}"> ${textToHtml(rollBody(roll, opt))} </span>
       </p>
     </div>
@@ -408,7 +417,7 @@ ${HR}`;
   function infoHtml(m) {
     return `    <div class="gap mid">
         <div class="msg_container"><div class="tag">정보</div></div>
-        <p style="color: var(--log-fg2, rgb(157, 157, 157));">
+        <p style="color: ${bodyColor(m)};">
         <span> ${textToHtml(m.text || '')} </span>
       </p>
     </div>
@@ -421,7 +430,7 @@ ${HR}`;
     const timeTag = (opt.time && m.createdAt) ? `<b> - ${escapeHtml(fmtTime(m.createdAt))}</b>` : '';
     return `    <div class="gap">
         <div class="msg_container"><div class="tag sm">시스템</div></div>
-        <p style="color: var(--log-fg, rgb(221, 221, 221));">
+        <p style="color: ${bodyColor(m)};">
         <span class="${nameCls}">${escapeHtml(m.name || 'system')}</span>${timeTag}<span> <br> </span><span class="bd"> ${textToHtml(m.text || '')} </span>
       </p>
     </div>
@@ -459,7 +468,7 @@ ${HR}`;
 
     return `    <div class="gap">
         <div class="msg_container">${icon}</div>
-        <p style="color: var(--log-fg, rgb(221, 221, 221));">
+        <p style="color: ${bodyColor(m)};">
         <span class="${nameCls}">${escapeHtml(m.name || '이름없음')}</span>${bTag}<span> <br> </span><span${bodyCls}> ${textToHtml(body)} </span>
       </p>
     </div>
@@ -682,8 +691,9 @@ background-color: transparent;
 
 /* 판정 결과 — 성공은 초록 계열(등급이 높을수록 밝고 선명), 실패는 빨강 계열.
    대성공·대실패는 글로우(text-shadow)로 크리티컬/펌블을 강조한다.
-   rs0 은 결과 키워드를 못 읽었을 때의 기본값. */
-.ccfolia_wrap .rs0{ color: rgb(221, 221, 221); font-size: 15px; font-weight: bold; }
+   rs0 은 결과 키워드를 못 읽었을 때(시크릿 다이스를 가렸을 때 포함)의 기본값 —
+   색을 따로 두지 않고 본문 색을 물려받아, 메인 외 탭에서 글자2 톤을 그대로 따른다. */
+.ccfolia_wrap .rs0{ font-size: 15px; font-weight: bold; }
 .ccfolia_wrap .rs1{ color: #56FC9A; font-size: 15px; font-weight: bold; text-shadow: rgba(86, 252, 154, 0.8) 0px 0px 5px; }
 .ccfolia_wrap .rs2{ color: #00FE02; font-size: 15px; font-weight: bold; }
 .ccfolia_wrap .rs3{ color: #00DC00; font-size: 15px; font-weight: bold; }

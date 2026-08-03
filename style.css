@@ -239,8 +239,9 @@ a#bookmarklet.dragging {
   color: var(--accent);
   font-weight: 700;
 }
-/* 출력 색상(배경·글자) 선택 — 결과 제목과 미리보기 사이에 놓인다 */
-.colors { margin: 0 0 14px; display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; }
+/* 출력 색상(배경·글자·글자2·기본값) 선택 — '스타일' 패널의 내용.
+   패널 제목(.panel h2)이 아래 여백을 이미 갖고 있어 자체 마진은 두지 않는다. */
+.colors { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; }
 .color-opt {
   display: inline-flex;
   align-items: center;
@@ -267,8 +268,6 @@ a#bookmarklet.dragging {
 .color-in::-webkit-color-swatch-wrapper { padding: 4px; }
 .color-in::-webkit-color-swatch { border: 0; border-radius: 5px; }
 .color-in::-moz-color-swatch { border: 0; border-radius: 5px; }
-/* 액션 버튼(컷인 삽입·순서 바꾸기·복사·다운로드)은 색상 줄 오른쪽으로 민다 */
-.colors .actions { margin-left: auto; }
 
 .channels { margin-top: 16px; }
 /* "채널 필터" 라벨 — 활성 탭과 같은 스타일(흰색 볼드 + 빨간 밑줄) */
@@ -378,15 +377,18 @@ a#bookmarklet.dragging {
 /* 비어 있을 땐 레이아웃에서 빼, 빈 줄+간격 때문에 아래 range-info 위치가 밀리지 않게 한다 */
 .search-info:empty { display: none; }
 
-/* 출력 */
+/* 출력 — 제목 왼쪽, 액션 버튼(컷인 삽입·순서 바꾸기·복사·다운로드) 오른쪽.
+   폭이 좁으면 버튼 줄이 아래로 내려가도록 wrap 을 허용한다. */
 .output-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 14px;
   margin-bottom: 14px;
 }
 .output-head h2 { margin: 0; }
-.actions { display: flex; gap: 10px; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; }
 
 #preview {
   width: 100%;

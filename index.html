@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>코코포리아 로그 변환기</title>
   <link rel="icon" type="image/png" href="icon.png">
-  <link rel="stylesheet" href="style.css?v=bfd3379">
+  <link rel="stylesheet" href="style.css?v=5b72651">
   <!-- 테마 초기 적용(깜빡임 방지) + 토글. 저장된 값이 없으면 시스템 설정을 따른다. -->
   <script>
     (function () {
@@ -99,16 +99,21 @@
       </div>
     </section>
 
-    <section class="panel" id="outputPanel" hidden>
-      <div class="output-head">
-        <h2>🎬 결과</h2>
-      </div>
+    <!-- 로그의 생김새(색)만 모은 패널. 무엇을 출력할지(옵션)·결과물(미리보기)과 분리한다. -->
+    <section class="panel" id="stylePanel" hidden>
+      <h2>🎨 스타일</h2>
       <div class="colors">
         <label class="color-opt">배경 <input type="color" id="optBg" class="color-in" value="#474747"></label>
         <label class="color-opt">글자 <input type="color" id="optFg" class="color-in" value="#dddddd"></label>
-        <label class="color-opt" title="아바타 안 글자·날짜/시각·정보 탭 색상">글자2 <input type="color" id="optFg2" class="color-in" value="#9d9d9d"></label>
+        <label class="color-opt" title="아바타 안 글자·날짜/시각·메인 외 탭 내용 색상">글자2 <input type="color" id="optFg2" class="color-in" value="#9d9d9d"></label>
         <button type="button" id="resetColors" class="btn outline" title="기본 배경·글자 색으로 되돌리기">기본값</button>
-        <!-- 컷인 삽입·순서 바꾸기·복사·다운로드 — 색상 선택 줄 오른쪽에 정렬 -->
+      </div>
+    </section>
+
+    <section class="panel" id="outputPanel" hidden>
+      <div class="output-head">
+        <h2>🎬 결과</h2>
+        <!-- 컷인 삽입·순서 바꾸기·복사·다운로드 — 제목 줄 오른쪽에 정렬 -->
         <div class="actions">
           <!-- 컷인 삽입 + 편집(ImgBB 키 설정) — 한 버튼처럼 보이는 분할 버튼 -->
           <span id="cutinBtn" class="btn outline split-btn">
@@ -157,6 +162,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=bfd3379"></script>
+  <script src="app.js?v=5b72651"></script>
 </body>
 </html>

@@ -166,6 +166,9 @@ a#bookmarklet.dragging {
 /* ON 상태는 hover 보다 뒤에 둬, 켜진 버튼에 마우스를 올려도 회색으로 채워지지 않게 한다 */
 .btn.outline.active,
 .btn.outline.active:hover { background: transparent; border-color: var(--accent); color: var(--accent); }
+/* 할 수 없는 동작(되돌릴 이력이 없는 되돌리기 버튼)은 흐리게 두고 hover 반응도 없앤다 */
+.btn:disabled { opacity: .4; cursor: default; }
+.btn.outline:disabled:hover { background: transparent; border-color: var(--border); }
 
 /* 컷인 버튼은 분할 버튼이라 컨테이너를 통째로 채우지 않는다. hover 채움은 안쪽
    파트(.split-part)가 각자 처리하므로, 컨테이너 배경만 id 우선순위로 투명하게 눌러 둔다
@@ -377,18 +380,18 @@ a#bookmarklet.dragging {
 /* 비어 있을 땐 레이아웃에서 빼, 빈 줄+간격 때문에 아래 range-info 위치가 밀리지 않게 한다 */
 .search-info:empty { display: none; }
 
-/* 출력 — 제목 왼쪽, 액션 버튼(컷인 삽입·순서 바꾸기·복사·다운로드) 오른쪽.
-   폭이 좁으면 버튼 줄이 아래로 내려가도록 wrap 을 허용한다. */
+/* 출력 — 제목 줄. 되돌리기는 제목 바로 오른쪽에 붙이고, 나머지 액션(컷인 삽입·순서 바꾸기·
+   삭제·복사·다운로드)은 오른쪽 끝으로 민다. 폭이 좁으면 액션 묶음만 아래 줄로 내려간다
+   (margin-left:auto 라 줄바꿈 뒤에도 오른쪽에 붙는다). */
 .output-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   flex-wrap: wrap;
-  gap: 10px 14px;
+  gap: 10px 12px;
   margin-bottom: 14px;
 }
 .output-head h2 { margin: 0; }
-.actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; margin-left: auto; }
 
 #preview {
   width: 100%;

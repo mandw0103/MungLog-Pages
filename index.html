@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>코코포리아 로그 변환기</title>
   <link rel="icon" type="image/png" href="icon.png">
-  <link rel="stylesheet" href="style.css?v=5b72651">
+  <link rel="stylesheet" href="style.css?v=0216b0f">
   <!-- 테마 초기 적용(깜빡임 방지) + 토글. 저장된 값이 없으면 시스템 설정을 따른다. -->
   <script>
     (function () {
@@ -111,9 +111,13 @@
     </section>
 
     <section class="panel" id="outputPanel" hidden>
+      <!-- 제목 줄 — 되돌리기는 제목 바로 오른쪽, 나머지 버튼은 줄 오른쪽 끝에 정렬 -->
       <div class="output-head">
         <h2>🎬 결과</h2>
-        <!-- 컷인 삽입·순서 바꾸기·복사·다운로드 — 제목 줄 오른쪽에 정렬 -->
+        <button type="button" id="undoBtn" class="btn outline icon" aria-label="되돌리기" title="되돌리기" disabled>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+        </button>
+        <!-- 컷인 삽입·순서 바꾸기·삭제·복사·다운로드 -->
         <div class="actions">
           <!-- 컷인 삽입 + 편집(ImgBB 키 설정) — 한 버튼처럼 보이는 분할 버튼 -->
           <span id="cutinBtn" class="btn outline split-btn">
@@ -123,6 +127,9 @@
             </button>
           </span>
           <button type="button" id="reorderToggle" class="btn outline" title="로그를 드래그해 순서 바꾸기">순서 바꾸기</button>
+          <button type="button" id="deleteToggle" class="btn outline icon" aria-label="로그 삭제" title="로그 삭제">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+          </button>
           <button type="button" id="copyBtn" class="btn outline icon" aria-label="HTML 복사" title="HTML 복사">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
           </button>
@@ -162,6 +169,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=5b72651"></script>
+  <script src="app.js?v=0216b0f"></script>
 </body>
 </html>

@@ -9,6 +9,7 @@
   let cutins = [];           // [{ id, afterId, src }] — afterId 메시지 _id(또는 TOP) 뒤에 삽입
   let insertMode = false;    // 컷인 삽입 모드(미리보기에 슬롯/삭제버튼 표시)
   let reorderMode = false;   // 순서 바꾸기 모드(미리보기에 드래그 핸들 표시)
+  let deleteMode = false;    // 로그 삭제 모드(미리보기 각 행에 ✕ 버튼 표시)
   let orderDirty = false;    // 재정렬로 messages 순서가 바뀌어 미리보기 컷인 앵커 속성이 낡았는지
   let pendingAfterId = null; // 슬롯 클릭으로 고른 삽입 위치(파일 선택 대기)
   let cutinSeq = 0;          // 컷인 고유 id 카운터
@@ -77,6 +78,8 @@
     cutinToggle: $('#cutinToggle'),
     cutinFile: $('#cutinFile'),
     reorderToggle: $('#reorderToggle'),
+    deleteToggle: $('#deleteToggle'),
+    undoBtn: $('#undoBtn'),
     imgbbSettingsBtn: $('#imgbbSettingsBtn'),
     imgbbModal: $('#imgbbModal'),
     imgbbKeyInput: $('#imgbbKeyInput'),
@@ -135,10 +138,14 @@
     messages = list;
     // 컷인 앵커로 쓸 안정적인 _id 보장(수집기 JSON 엔 항상 있으나, 없으면 순번으로 채움)
     messages.forEach((m, i) => { if (m._id == null) m._id = 'm' + i; });
-    // 새 로그를 받으면 이전 컷인·삽입/순서 모드는 초기화한다(예전 메시지를 가리키므로).
+    // 새 로그를 받으면 이전 컷인·편집 모드는 초기화한다(예전 메시지를 가리키므로).
     cutins = [];
     insertMode = false;
     reorderMode = false;
+    deleteMode = false;
+    // 편집 이력도 비운다 — 예전 로그를 담고 있어 되돌리면 안 되므로.
+    undoStack = [];
+    uploadedSrc.clear();
     roomId = (data && data.roomId) || '';
     onLoaded();
   }
@@ -165,6 +172,8 @@
     setApplyInfo('');
     syncCutinUI();
     syncReorderUI();
+    syncDeleteUI();
+    syncUndoUI();
     buildChannelFilter();
     els.optionsPanel.hidden = false;
     els.stylePanel.hidden = false;
@@ -484,13 +493,14 @@ ${HR}`;
       ? `<button type="button" class="cutin-del" data-id="${c.id}" title="컷인 삭제">🗑</button>`
       : '';
     const handle = opt.preview ? REORDER_HANDLE : '';   // 순서 바꾸기 모드에서 컷인도 독립적으로 이동
+    const rowDel = opt.preview ? ROW_DEL : '';          // 삭제 모드에서 컷인도 한 줄로 지울 수 있다
     const cid = opt.preview ? ` data-cutin-id="${c.id}"` : '';
     // 업로드 중이면 자리 표시 박스, 완료되면 이미지(외부 링크일 수 있어 referrer 미전송).
     const inner = c.uploading
       ? `<div class="cutin-wait">이미지 업로드 중…</div>`
       : `<img src="${c.src}" alt="컷인" loading="lazy" referrerpolicy="no-referrer">`;
     return `    <div class="gap cutin"${cid}>
-        ${del}${inner}${handle}
+        ${del}${inner}${handle}${rowDel}
     </div>
 ${HR}`;
   }
@@ -507,6 +517,13 @@ ${HR}`;
   // 순서 바꾸기 모드에서 각 메시지 행 우측에 붙는 드래그 핸들(≡). 미리보기에서만 넣고,
   // reorder-mode 일 때만 보인다. .gap(position:relative) 기준으로 CSS 가 우측에 절대배치한다.
   const REORDER_HANDLE = '<span class="reorder-handle" aria-hidden="true">&#9776;</span>';
+  // 삭제 모드에서 각 행 우측에 붙는 ✕ 버튼. 순서 바꾸기 핸들과 같은 자리를 쓰지만
+  // 두 모드가 상호 배타라 동시에 보이지 않는다.
+  // ✕ 를 문자로 쓰면 폰트가 주는 얇은 획이라 옆의 ☰ 핸들과 굵기가 안 맞는다.
+  // 선 굵기를 직접 정할 수 있게 SVG 로 긋고, 16px 로 그려 획이 2px(=☰ 막대 두께)이 되게 한다.
+  const ROW_DEL = '<button type="button" class="row-del" aria-label="이 로그 삭제" title="이 로그 삭제">'
+    + '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true">'
+    + '<line x1="6" y1="6" x2="18" y2="18"></line><line x1="18" y1="6" x2="6" y2="18"></line></svg></button>';
 
   function buildRows(items, opt) {
     const rows = [];
@@ -521,8 +538,8 @@ ${HR}`;
         // class 목록이 타입마다 달라(gap / gap mid) 여는 태그의 class 속성 뒤에 끼워 넣는다.
         // 치환값에 $ 가 들어가도 안전하도록 함수형 replace 를 쓴다.
         row = row.replace(/^(\s*<div class="gap[^"]*")/, (mt) => mt + attrs);
-        // 드래그 핸들을 .gap 닫는 태그 직전(</p> 뒤)에 넣는다. 모든 메시지 타입이 동일 종료 형태.
-        row = row.replace('</p>\n    </div>', '</p>' + REORDER_HANDLE + '\n    </div>');
+        // 드래그 핸들·삭제 버튼을 .gap 닫는 태그 직전(</p> 뒤)에 넣는다. 모든 메시지 타입이 동일 종료 형태.
+        row = row.replace('</p>\n    </div>', '</p>' + REORDER_HANDLE + ROW_DEL + '\n    </div>');
       }
       rows.push(row);
       cutinsFor(m._id, opt).forEach(c => rows.push(cutinHtml(c, opt)));
@@ -766,6 +783,27 @@ body.reorder-mode .reorder-handle{ display: block; }
 .reorder-handle:active{ cursor: grabbing; }
 /* 드래그 중인 원본 행은 흐리게 */
 .gap.reorder-dragging{ opacity: 0.4; }
+/* 로그 삭제 — 각 로그 우측 ✕ 버튼. delete-mode 일 때만 보인다.
+   순서 바꾸기 핸들과 같은 자리를 쓰며(두 모드는 상호 배타), 누르면 확인 없이 바로 지운다. */
+.row-del{
+  display: none;
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  padding: 6px 8px;
+  color: #bbb;
+  line-height: 1;
+  z-index: 3;
+  transition: color .15s;
+}
+.row-del svg{ display: block; width: 16px; height: 16px; }
+body.delete-mode .row-del{ display: block; }
+.row-del:hover{ color: rgb(255, 110, 110); }
+
 /* 드롭 위치(삽입 경계)를 보여주는 가로선 */
 #reorder-line{
   position: absolute;
@@ -860,13 +898,20 @@ body.reorder-mode .reorder-handle{ display: block; }
     els.cutinBtn.classList.toggle('active', insertMode);
   }
 
-  function toggleInsertMode() {
-    insertMode = !insertMode;
-    pendingAfterId = null;
-    // 순서 바꾸기와 상호 배타 — 컷인 삽입을 켜면 순서 모드를 끈다.
-    if (insertMode && reorderMode) reorderMode = false;
+  // 미리보기 편집 모드(컷인 삽입 · 순서 바꾸기 · 로그 삭제)는 셋이 상호 배타다.
+  // 고른 모드 하나만 켜고 나머지는 끈다(null 이면 전부 끔).
+  function setEditMode(mode) {
+    insertMode = mode === 'insert';
+    reorderMode = mode === 'reorder';
+    deleteMode = mode === 'delete';
+    if (!insertMode) pendingAfterId = null;
     syncCutinUI();
     syncReorderUI();
+    syncDeleteUI();
+  }
+
+  function toggleInsertMode() {
+    setEditMode(insertMode ? null : 'insert');
     // 순서가 바뀐 뒤 컷인 삽입을 켜면, 낡은 컷인 앵커 속성을 새로 그려 갱신한다(한 번의 리로드).
     // 그 외엔 reload 없이 body 클래스만 토글 → 스크롤 유지, 깜빡임 없음.
     if (insertMode && orderDirty) render();
@@ -884,21 +929,30 @@ body.reorder-mode .reorder-handle{ display: block; }
   }
 
   function toggleReorderMode() {
-    reorderMode = !reorderMode;
-    // 컷인 삽입과 상호 배타 — 순서 모드를 켜면 컷인 삽입을 끈다.
-    if (reorderMode && insertMode) { insertMode = false; pendingAfterId = null; }
-    syncCutinUI();
-    syncReorderUI();
+    setEditMode(reorderMode ? null : 'reorder');
     applyPreviewModeClasses();
   }
 
-  // 두 모드(insert-mode·reorder-mode)의 body 클래스와, 꺼진 모드의 떠 있던 보조 UI(띠·표시선)를
-  // reload 없이 한 번에 반영한다. 토글 어느 쪽에서 호출해도 결과가 일관되게 유지된다.
+  // ── 로그 삭제 모드 ──────────────────────────────────────────
+  // 버튼 활성 표시를 현재 모드에 맞춘다.
+  function syncDeleteUI() {
+    els.deleteToggle.classList.toggle('active', deleteMode);
+  }
+
+  function toggleDeleteMode() {
+    setEditMode(deleteMode ? null : 'delete');
+    applyPreviewModeClasses();
+  }
+
+  // 세 모드(insert-mode·reorder-mode·delete-mode)의 body 클래스와, 꺼진 모드의 떠 있던
+  // 보조 UI(띠·표시선)를 reload 없이 한 번에 반영한다.
+  // 토글 어느 쪽에서 호출해도 결과가 일관되게 유지된다.
   function applyPreviewModeClasses() {
     const doc = els.preview.contentDocument;
     if (!doc || !doc.body) return;
     doc.body.classList.toggle('insert-mode', insertMode);
     doc.body.classList.toggle('reorder-mode', reorderMode);
+    doc.body.classList.toggle('delete-mode', deleteMode);
     if (!insertMode) {
       const band = doc.getElementById('cutin-band');
       if (band) band.style.display = 'none';   // 끄면 떠 있던 띠를 즉시 감춘다
@@ -976,22 +1030,27 @@ body.reorder-mode .reorder-handle{ display: block; }
     pendingAfterId = null;
     // 업로드는 시간이 걸리므로 자리 표시용 컷인을 먼저 넣어 진행 상태를 보여준다.
     const id = ++cutinSeq;
+    const entry = pushUndo();
     cutins.push({ id, afterId, src: '', uploading: true });
     render();
     resolveCutinSrc(file)
       .then(src => {
+        uploadedSrc.set(id, src);                   // 되돌린 뒤에도 링크를 다시 찾을 수 있게
         const c = cutins.find(x => x.id === id);
         if (c) { c.src = src; c.uploading = false; }
         render();
       })
       .catch(err => {
         cutins = cutins.filter(x => x.id !== id);   // 실패한 자리 표시는 제거
+        dropUndo(entry);                            // 저절로 원상복구됐으니 이력에서도 뺀다
         render();
         alert('이미지를 넣지 못했습니다: ' + err.message);
       });
   }
 
   function removeCutin(id) {
+    if (!cutins.some(c => String(c.id) === String(id))) return;   // 없는 컷인이면 이력도 남기지 않는다
+    pushUndo();
     cutins = cutins.filter(c => String(c.id) !== String(id));
     render();
   }
@@ -1014,6 +1073,86 @@ body.reorder-mode .reorder-handle{ display: block; }
     let to = 0;
     if (afterId !== TOP) to = messages.findIndex(m => m._id === afterId) + 1;  // 제거 후 재계산
     messages.splice(to, 0, item);
+    return true;
+  }
+
+  // ── 되돌리기(편집 이력) ──────────────────────────────────────
+  // 편집(로그 삭제 · 순서 바꾸기 · 컷인 추가/삭제) 직전 상태를 스택에 쌓아두고,
+  // 되돌리기 버튼으로 한 단계씩 되짚는다. 편집 대상 상태는 셋뿐이라 통째로 찍어 둔다.
+  //  · messages — 메시지 객체 자체는 바뀌지 않으므로 배열만 얕게 복사(길어도 가볍다)
+  //  · cutins   — afterId·src 가 바뀌므로 객체까지 복사
+  //  · applied  — 삭제하면 끝 번호가 당겨지므로 함께 되돌린다
+  const UNDO_MAX = 50;        // 오래된 이력부터 버려 메모리 상한을 둔다
+  let undoStack = [];
+
+  // 업로드가 끝난 컷인의 링크(id → src). 되돌린 스냅샷이 '업로드 중' 상태를 담고 있어도
+  // 이 표로 덮어써, 이미 끝난 업로드가 자리 표시(스피너)로 되살아나 멈추는 것을 막는다.
+  const uploadedSrc = new Map();
+
+  function snapshot() {
+    return {
+      messages: messages.slice(),
+      cutins: cutins.map(c => ({ ...c })),
+      applied: { ...applied },
+    };
+  }
+
+  // 되돌릴 지점을 남긴다. 되돌아온 스냅샷 객체를 반환해 dropUndo 로 취소할 수 있게 한다.
+  function pushUndo() {
+    const entry = snapshot();
+    undoStack.push(entry);
+    if (undoStack.length > UNDO_MAX) undoStack.shift();
+    syncUndoUI();
+    return entry;
+  }
+
+  // 남겨둔 지점을 취소한다(컷인 업로드가 실패해 상태가 저절로 원상복구된 경우).
+  // 그 사이 다른 편집이 쌓였으면 순서가 어긋나므로 맨 위일 때만 뺀다.
+  function dropUndo(entry) {
+    if (entry && undoStack[undoStack.length - 1] === entry) {
+      undoStack.pop();
+      syncUndoUI();
+    }
+  }
+
+  function syncUndoUI() {
+    els.undoBtn.disabled = undoStack.length === 0;
+  }
+
+  function undo() {
+    const s = undoStack.pop();
+    if (!s) return;
+    messages = s.messages;
+    cutins = s.cutins.map(c => {
+      const done = uploadedSrc.get(c.id);
+      return done ? { ...c, src: done, uploading: false } : c;
+    });
+    applied = s.applied;
+    syncUndoUI();
+    render();
+  }
+
+  // ── 로그 삭제: 모델(messages) 에서 제거 ─────────────────────
+  // 지운 메시지에 앵커돼 있던 컷인은 사라지지 않게 '바로 앞 메시지'(맨 앞이면 TOP)로
+  // 다시 붙인다. 옮긴 컷인은 그 앵커에 이미 달린 컷인들 뒤로 넣어, 보이던 위아래 순서를 지킨다.
+  // 실제로 지웠을 때만 true(없는 _id 면 false → 호출부가 재렌더를 건너뜀).
+  function deleteMessage(id) {
+    const i = messages.findIndex(m => m._id === id);
+    if (i < 0) return false;
+    pushUndo();
+    const prevAnchor = i > 0 ? messages[i - 1]._id : TOP;
+    const orphans = cutins.filter(c => c.afterId === id);
+    if (orphans.length) {
+      cutins = cutins.filter(c => c.afterId !== id);
+      orphans.forEach(c => { c.afterId = prevAnchor; });
+      let at = -1;
+      cutins.forEach((c, k) => { if (c.afterId === prevAnchor) at = k; });
+      cutins.splice(at + 1, 0, ...orphans);
+    }
+    messages.splice(i, 1);
+    // 지운 로그는 항상 '출력 중인 범위' 안에 있으므로 끝 번호를 하나 당긴다.
+    // 그러지 않으면 범위 밖(뒤)에 있던 로그가 한 줄 딸려 올라와, 지운 자리를 메워 버린다.
+    if (applied.end != null) applied.end -= 1;
     return true;
   }
 
@@ -1090,6 +1229,23 @@ body.reorder-mode .reorder-handle{ display: block; }
     // 삭제 버튼은 자기 클릭만 처리하고 삽입으로 번지지 않게 막는다.
     doc.querySelectorAll('.cutin-del').forEach(el =>
       el.addEventListener('click', (ev) => { ev.stopPropagation(); removeCutin(el.dataset.id); }));
+
+    // ── 로그 삭제 ────────────────────────────────────────────────
+    // 삭제 모드에서 행 우측 ✕ 를 누르면 확인 없이 바로 지운다(메시지·컷인 모두 한 줄 단위).
+    // 세 모드는 상호 배타라 이 클릭이 컷인 삽입으로 번질 일은 없다.
+    doc.addEventListener('click', (e) => {
+      const btn = e.target && e.target.closest ? e.target.closest('.row-del') : null;
+      if (!btn) return;
+      e.stopPropagation();
+      if (!deleteMode) return;
+      const row = btn.closest('.gap');
+      if (!row) return;
+      if (row.hasAttribute('data-mid')) {
+        if (deleteMessage(row.getAttribute('data-mid'))) render();
+      } else {
+        removeCutin(row.getAttribute('data-cutin-id'));   // 내부에서 재렌더
+      }
+    });
 
     let curAfter = null;   // 현재 띠가 가리키는 삽입 위치(afterId)
     let raf = 0;
@@ -1259,6 +1415,7 @@ body.reorder-mode .reorder-handle{ display: block; }
       dragRow = null; dragKind = null; dragBlock = null; dragBlockSet = null;
       dropRef = null; dropValid = false; dragMsgId = null; dragCutinId = null;
       if (!valid || !wrap) return;
+      pushUndo();   // 모델을 건드리기 전에(아래 이동·재앵커 전에) 되돌릴 지점을 남긴다
       const esc = (s) => (win.CSS && win.CSS.escape) ? win.CSS.escape(s) : s;
 
       let changed = false;
@@ -1394,6 +1551,8 @@ body.reorder-mode .reorder-handle{ display: block; }
   els.downloadBtn.addEventListener('click', download);
   els.copyBtn.addEventListener('click', copy);
   els.reorderToggle.addEventListener('click', toggleReorderMode);
+  els.deleteToggle.addEventListener('click', toggleDeleteMode);
+  els.undoBtn.addEventListener('click', undo);
   // 분할 버튼 — 왼쪽(컷인 삽입) 은 삽입 모드 토글, 오른쪽(편집 아이콘) 은 ImgBB 키 설정 모달.
   els.cutinToggle.addEventListener('click', toggleInsertMode);
   els.imgbbSettingsBtn.addEventListener('click', openImgbbModal);

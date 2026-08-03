@@ -5,8 +5,7 @@
   --text: #e8e8ea;
   --muted: #9b9ba3;
   --accent: #DC004E;
-  --border: #3a3b42;
-  --focus-border: #fff;   /* 입력칸 포커스 테두리(어두운 모드=흰색) */
+  --border: #636472;
   --strong: #fff;         /* 강조 텍스트·버튼(빨강 대신): 어두운 모드=흰색 */
 }
 
@@ -18,8 +17,7 @@
   --text: #1e2126;
   --muted: #8f96a1;
   --accent: #DC004E;
-  --border: #d8dbe0;
-  --focus-border: #000;   /* 밝은 모드=검은색 */
+  --border: #cacdd1;
   --strong: #000;         /* 밝은 모드=검은색 */
 }
 
@@ -152,42 +150,27 @@ a#bookmarklet.dragging {
   /* 토글과 동일한 hover 페이드 (마우스 올릴 때/내릴 때 부드럽게) */
   transition: background-color .2s, border-color .15s, color .15s;
 }
-.btn:hover { border-color: var(--accent); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-/* 컷인 삽입 모드 on 상태 표시 */
-.btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
-/* 아웃라인 버튼(코코포리아 로그 가져오기와 동일 스타일): 평소 빨간 테두리, hover 시 전체 빨강 */
+/* 사각형 버튼의 기본형 — 사이트 안의 버튼은 북마클릿(.primary)을 빼고 모두 이 형태다.
+     평소        : 회색 테두리 + 빈 배경 + 글자색(--strong)
+     hover       : 테두리와 같은 회색으로 채우고 글자색은 그대로
+     ON(.active) : 강조색 테두리 + 빈 배경 + 강조색 글자 (채우지 않고 색으로만 알린다)
+   색을 전부 테마 변수로 두어 밝은/어두운 모드가 자동으로 따라온다. */
 .btn.outline {
   background: transparent;
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--border);
+  color: var(--strong);
 }
-/* hover, 그리고 컷인 삽입 모드 ON(.active) 이면 전체 빨강으로 채운다 */
-.btn.outline:hover,
-.btn.outline.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.outline:hover { background: var(--border); border-color: var(--border); color: var(--strong); }
+/* ON 상태는 hover 보다 뒤에 둬, 켜진 버튼에 마우스를 올려도 회색으로 채워지지 않게 한다 */
+.btn.outline.active,
+.btn.outline.active:hover { background: transparent; border-color: var(--accent); color: var(--accent); }
 
-/* '출력'·'컷인 삽입'·'HTML 복사' 버튼은 강조색(빨강) 대신
-   검정(어두운 모드=흰색)으로 표시하고, hover·활성 시 그 색으로 채운다.
-   (ID 선택자라 위 .btn.outline / .btn:hover 규칙을 우선순위로 덮는다.) */
-#applyBtn,
-#cutinBtn,
-#reorderToggle,
-#copyBtn,
-#resetColors,
-#imgbbClearBtn { border-color: var(--strong); color: var(--strong); }
-#applyBtn:hover,
-#copyBtn:hover,
-#resetColors:hover,
-#imgbbClearBtn:hover { background: var(--strong); border-color: var(--strong); color: var(--bg); }
-/* 순서 바꾸기 버튼 — hover, 그리고 모드 ON(.active) 이면 --strong 으로 채운다 */
-#reorderToggle:hover,
-#reorderToggle.active { background: var(--strong); border-color: var(--strong); color: var(--bg); }
-/* 컷인 버튼은 분할 버튼이라 컨테이너를 통째로 채우지 않는다. .btn.outline 의 hover·active
-   빨강 배경을 id 우선순위로 눌러 항상 투명하게 두고, 테두리만 --strong 으로 유지한다.
-   실제 채움은 안쪽 파트(.split-part)가 각자 처리한다. */
-#cutinBtn:hover,
-#cutinBtn.active { background: transparent; border-color: var(--strong); }
+/* 컷인 버튼은 분할 버튼이라 컨테이너를 통째로 채우지 않는다. hover 채움은 안쪽
+   파트(.split-part)가 각자 처리하므로, 컨테이너 배경만 id 우선순위로 투명하게 눌러 둔다
+   (테두리·글자색은 위 .btn.outline 규칙을 그대로 쓴다). */
+#cutinBtn:hover { background: transparent; }
 
 /* 컷인 삽입 + 편집(ImgBB 키 설정) — 한 버튼처럼 보이는 분할 버튼.
    컨테이너(.btn.outline)가 테두리·라운드를 갖고, 패딩은 안쪽 파트가 나눠 가진다. */
@@ -196,7 +179,7 @@ a#bookmarklet.dragging {
   margin: 0;
   border: 0;
   background: transparent;
-  color: inherit;            /* 컨테이너(#cutinBtn → --strong) 색을 상속 */
+  color: inherit;            /* 컨테이너(#cutinBtn) 글자색 상속 — 평소 --strong, ON 이면 강조색 */
   font: inherit;
   line-height: 1.2;
   cursor: pointer;
@@ -208,7 +191,8 @@ a#bookmarklet.dragging {
 .split-icon { padding: 8px 11px; position: relative; }
 .split-icon svg { display: block; width: 16px; height: 16px; }
 /* 가운데 구분선 '|' — 편집 파트의 왼쪽 경계에 얹는 오버레이라 두 파트가 맞붙고,
-   hover 채움이 이 경계선까지 틈 없이 닿는다. top/bottom 여백으로 짧은 인셋 모양 유지. */
+   hover 채움이 이 경계선까지 틈 없이 닿는다. top/bottom 여백으로 짧은 인셋 모양 유지.
+   색은 버튼 테두리와 같은 --border — 한 버튼 안의 선이 테두리보다 튀지 않게 한다. */
 .split-icon::before {
   content: "";
   position: absolute;
@@ -216,18 +200,17 @@ a#bookmarklet.dragging {
   bottom: 6px;
   left: 0;
   width: 1px;
-  background: var(--strong);
-  opacity: .45;
+  background: var(--border);
   transition: opacity .15s;
 }
-/* 파트를 검정으로 채울 때(어느 쪽이든 hover, 또는 삽입 모드 활성)는 구분선을 감춰,
-   검정 위/옆에 선이 따로 떠 보이지 않게 한다. 구분선은 평소(rest)에만 나타난다. */
-.split-btn:hover .split-icon::before,
-#cutinBtn.active .split-icon::before { opacity: 0; }
-/* 어느 쪽을 누르는지 보이도록, 마우스 올린 파트만 채운다 */
-.split-btn .split-part:hover { background: var(--strong); color: var(--bg); }
-/* 컷인 삽입 모드 ON: 왼쪽(삽입) 파트를 채워 활성 상태를 표시 */
-#cutinBtn.active .split-main { background: var(--strong); color: var(--bg); }
+/* 한쪽 파트를 채우는 동안엔 구분선을 감춰, 채운 영역 경계에 선이 따로 떠 보이지 않게 한다.
+   구분선은 평소(rest)와 ON 상태에서만 나타난다. */
+.split-btn:hover .split-icon::before { opacity: 0; }
+/* 어느 쪽을 누르는지 보이도록, 마우스 올린 파트만 채운다.
+   글자색은 건드리지 않는다 — color:inherit 라 평소엔 글자색, ON 이면 강조색이 그대로 유지된다. */
+.split-btn .split-part:hover { background: var(--border); }
+/* 삽입 모드 ON 일 때만 회색 대신 강조색을 옅게 깐다 — 회색 채움 위에서 분홍 글자가 묻히지 않게. */
+#cutinBtn.active .split-part:hover { background: rgba(220, 0, 78, .14); }
 
 /* 아이콘 전용 버튼(복사·다운로드) — SVG 를 가운데 정렬, 글자 버튼과 높이 유지 */
 .btn.icon { display: inline-flex; align-items: center; justify-content: center; padding: 8px 12px; }
@@ -266,8 +249,9 @@ a#bookmarklet.dragging {
   cursor: pointer;
   user-select: none;
 }
-/* 색상 팔레트 스와치 — 버튼(.btn.outline)과 같은 높이·라운드로 맞춘다.
-   테두리는 연한 --border 로 두고(스와치 색이 주인공), hover 시 --accent 로 바뀐다.
+/* 색상 팔레트 스와치 — 버튼(.btn.outline)과 같은 높이·라운드·hover 로 맞춘다.
+   테두리는 버튼과 같은 --border 로 두고(스와치 색이 주인공), hover 시 스와치 둘레 여백을
+   같은 회색으로 채운다(버튼의 hover 채움과 동일한 반응).
    값은 항상 핵사(#rrggbb)라 색상 형식은 헥사만 쓰인다. */
 .color-in {
   width: 46px;
@@ -277,9 +261,9 @@ a#bookmarklet.dragging {
   border-radius: 8px;
   background: transparent;
   cursor: pointer;
-  transition: border-color .15s;
+  transition: background-color .2s, border-color .15s;
 }
-.color-in:hover { border-color: var(--accent); }
+.color-in:hover { background: var(--border); }
 .color-in::-webkit-color-swatch-wrapper { padding: 4px; }
 .color-in::-webkit-color-swatch { border: 0; border-radius: 5px; }
 .color-in::-moz-color-swatch { border: 0; border-radius: 5px; }
@@ -355,18 +339,24 @@ a#bookmarklet.dragging {
 .search .text-in { flex: 1 1 0; min-width: 110px; }
 .range-sep { color: var(--muted); user-select: none; }
 .range-info { display: block; margin-top: 10px; color: var(--strong); font-weight: 600; }
+/* 이어 출력 입력칸(번호·대사) — 평소엔 테두리를 배경(--panel-2)과 같은 색으로 둬서 윤곽 없이
+   '연한 회색 칸' 하나로 보이게 한다. 테두리를 지우지 않고 색만 맞추는 이유는, 버튼과의
+   세로 크기(1px 테두리 포함)를 그대로 유지하기 위함이다.
+   입력 중(포커스)에는 그 테두리만 --muted 로 바꿔, 커서가 어느 칸에 있는지 알 수 있게 한다
+   (브라우저 기본 테두리는 outline:none 으로 끄고 우리 테두리로 대신한다). */
 .num {
   width: 80px;
   background: var(--panel-2);
   color: var(--text);
-  border: 1px solid var(--border);
+  border: 1px solid var(--panel-2);
   border-radius: 8px;
   padding: 8px 8px;              /* 버튼과 같은 세로 크기 */
   font-family: inherit;
   font-size: .95rem;
   line-height: 1.2;
+  transition: border-color .15s;
 }
-.num:focus { outline: none; border-color: var(--focus-border); }
+.num:focus { outline: none; border-color: var(--muted); }
 
 /* 대사 입력 */
 .text-in {
@@ -374,14 +364,15 @@ a#bookmarklet.dragging {
   min-width: 180px;
   background: var(--panel-2);
   color: var(--text);
-  border: 1px solid var(--border);
+  border: 1px solid var(--panel-2);
   border-radius: 8px;
   padding: 8px 10px;             /* 버튼과 같은 세로 크기 */
   font-family: inherit;
   font-size: .95rem;
   line-height: 1.2;
+  transition: border-color .15s;
 }
-.text-in:focus { outline: none; border-color: var(--focus-border); }
+.text-in:focus { outline: none; border-color: var(--muted); }
 /* 범위 안내문(입력 오류 등) — 입력 줄 아래에 한 줄로 */
 .search-info { display: block; margin-top: 10px; font-size: .9rem; color: var(--muted); }
 /* 비어 있을 땐 레이아웃에서 빼, 빈 줄+간격 때문에 아래 range-info 위치가 밀리지 않게 한다 */

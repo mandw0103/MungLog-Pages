@@ -8,7 +8,6 @@
   --border: #3a3b42;
   --focus-border: #fff;   /* 입력칸 포커스 테두리(어두운 모드=흰색) */
   --strong: #fff;         /* 강조 텍스트·버튼(빨강 대신): 어두운 모드=흰색 */
-  --hl: rgba(220, 0, 78, .42);   /* 형광펜 하이라이트(accent 반투명, 어두운 배경용) */
 }
 
 /* 밝은 모드 — data-theme="light" 일 때 변수만 덮어써 전체 UI 색을 바꾼다. */
@@ -17,12 +16,11 @@
   --panel: #ffffff;
   --panel-2: #eceef2;
   --text: #1e2126;
-  --muted: #656a72;
+  --muted: #8f96a1;
   --accent: #DC004E;
   --border: #d8dbe0;
   --focus-border: #000;   /* 밝은 모드=검은색 */
   --strong: #000;         /* 밝은 모드=검은색 */
-  --hl: rgba(220, 0, 78, .30);   /* 형광펜 하이라이트 — 흰 배경에선 더 진해 보여 알파를 낮춘다 */
 }
 
 * { box-sizing: border-box; }
@@ -116,7 +114,7 @@ main {
   border-radius: 12px;
   padding: 20px;
 }
-.panel h2 { margin: 0 0 14px; font-size: 1.1rem; }
+.panel h2 { margin: 0 0 14px; font-size: 1.4rem; }
 
 /* 가져오기 방법 */
 .get-method { margin-top: 4px; }
@@ -169,16 +167,16 @@ a#bookmarklet.dragging {
 .btn.outline:hover,
 .btn.outline.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
-/* '이 대사 다음부터 출력'·'컷인 삽입'·'HTML 복사' 버튼은 강조색(빨강) 대신
+/* '출력'·'컷인 삽입'·'HTML 복사' 버튼은 강조색(빨강) 대신
    검정(어두운 모드=흰색)으로 표시하고, hover·활성 시 그 색으로 채운다.
    (ID 선택자라 위 .btn.outline / .btn:hover 규칙을 우선순위로 덮는다.) */
-#searchBtn,
+#applyBtn,
 #cutinBtn,
 #reorderToggle,
 #copyBtn,
 #resetColors,
 #imgbbClearBtn { border-color: var(--strong); color: var(--strong); }
-#searchBtn:hover,
+#applyBtn:hover,
 #copyBtn:hover,
 #resetColors:hover,
 #imgbbClearBtn:hover { background: var(--strong); border-color: var(--strong); color: var(--bg); }
@@ -248,33 +246,12 @@ a#bookmarklet.dragging {
   pointer-events: none;
 }
 .opt-label {
-  position: relative;
-  isolation: isolate;   /* 자체 stacking context — 아래 ::before(z-index:-1)가 패널 배경 뒤로 빠지지 않게 */
   color: var(--muted);
   user-select: none;
   transition: color .15s;
 }
-/* 형광펜 하이라이트 — 글씨보다 살짝 얇은 빨간 띠(반투명 accent --hl).
-   글자 뒤(z-index:-1)에 깔려 아래 글자가 비쳐 보이는 형광펜처럼 자연스럽다.
-   다크/라이트 배경 위에서 알파로 자연스럽게 배어난다.
-   평소엔 opacity 0 으로 숨겨 두고, hover 때 페이드 인 한다. */
-.opt-label::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 62%;
-  height: .72em;                 /* 글씨보다 살짝 얇게 */
-  transform: translateY(-50%);   /* 글자 아래쪽에 걸치게(형광펜 느낌) */
-  background: var(--hl);
-  opacity: 0;
-  z-index: -1;
-  pointer-events: none;
-  transition: opacity .2s ease;
-}
-/* 마우스 오버 시 글자색을 선명하게 + 형광펜 띠를 페이드 인 해 피드백을 준다 */
+/* 마우스 오버 시 글자색을 선명하게 해 피드백을 준다 */
 .opt:hover .opt-label { color: var(--text); }
-.opt:hover .opt-label::before { opacity: 1; }
 .opt input[type="checkbox"]:checked + .opt-label {
   color: var(--accent);
   font-weight: 700;
@@ -368,9 +345,15 @@ a#bookmarklet.dragging {
 .toggle-btn:hover { color: var(--text); }
 .toggle-btn.active { color: var(--text); font-weight: 700; }
 
-/* 출력 범위(시작 번호 ~ 끝) */
-.range { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; }
-.range-text strong { color: var(--accent); }
+/* 출력 범위 — [첫] ~ [끝] (돋보기) 한 줄.
+   두 모드 패널과 공유 버튼을 같은 flex 줄에 두어, 보이는 쪽 입력 바로 옆에 버튼이 붙는다. */
+.range-row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 12px; }
+.range, .search { display: flex; align-items: center; gap: 10px; }
+/* 대사 입력은 길어서 남는 폭을 차지하고, 두 칸이 정확히 반씩 나눠 갖는다.
+   basis 를 0 으로 둬 입력칸 고유 너비(size 속성)에 영향받지 않게 한다. */
+.search { flex: 1 1 320px; }
+.search .text-in { flex: 1 1 0; min-width: 110px; }
+.range-sep { color: var(--muted); user-select: none; }
 .range-info { display: block; margin-top: 10px; color: var(--strong); font-weight: 600; }
 .num {
   width: 80px;
@@ -385,8 +368,7 @@ a#bookmarklet.dragging {
 }
 .num:focus { outline: none; border-color: var(--focus-border); }
 
-/* 대사 검색 */
-.search { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; }
+/* 대사 입력 */
 .text-in {
   flex: 1 1 240px;
   min-width: 180px;
@@ -400,7 +382,8 @@ a#bookmarklet.dragging {
   line-height: 1.2;
 }
 .text-in:focus { outline: none; border-color: var(--focus-border); }
-.search-info { font-size: .9rem; flex-basis: 100%; color: var(--muted); }
+/* 범위 안내문(입력 오류 등) — 입력 줄 아래에 한 줄로 */
+.search-info { display: block; margin-top: 10px; font-size: .9rem; color: var(--muted); }
 /* 비어 있을 땐 레이아웃에서 빼, 빈 줄+간격 때문에 아래 range-info 위치가 밀리지 않게 한다 */
 .search-info:empty { display: none; }
 

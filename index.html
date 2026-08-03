@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>코코포리아 로그 변환기</title>
   <link rel="icon" type="image/png" href="icon.png">
-  <link rel="stylesheet" href="style.css?v=edf8921">
+  <link rel="stylesheet" href="style.css?v=5778801">
   <!-- 테마 초기 적용(깜빡임 방지) + 토글. 저장된 값이 없으면 시스템 설정을 따른다. -->
   <script>
     (function () {
@@ -44,7 +44,7 @@
 
   <main>
     <section class="panel">
-      <h2>❶ 로그 가져오기</h2>
+      <h2>📩 로그 가져오기</h2>
 
       <div class="get-method">
         <p>아래 <strong>코코포리아 로그 가져오기</strong> 버튼을 <strong>북마크바로 드래그</strong>해 한 번 등록하세요.
@@ -60,7 +60,7 @@
     </section>
 
     <section class="panel" id="optionsPanel" hidden>
-      <h2>❷ 옵션</h2>
+      <h2>⚙️ 옵션</h2>
       <div class="options">
         <label class="opt"><input type="checkbox" id="optTime" checked><span class="opt-label">시간 표시</span></label>
       </div>
@@ -74,24 +74,33 @@
           <button type="button" id="modeText" class="toggle-btn">대사로 이어 출력</button>
         </div>
 
-        <div class="range" id="rangeNum">
-          <span class="range-text">선택한 탭의 로그 <strong id="totalCount">0</strong>건 중,
-            <input type="number" id="optStart" class="num" min="1" value="1"> 번째부터 끝까지 출력</span>
+        <!-- [첫] ~ [끝] (돋보기) 한 줄. 두 모드 중 보이는 쪽 옆에 공유 버튼이 붙는다. -->
+        <div class="range-row">
+          <div class="range" id="rangeNum">
+            <input type="number" id="optStart" class="num" min="1" placeholder="첫 번호">
+            <span class="range-sep">~</span>
+            <input type="number" id="optEnd" class="num" min="1" placeholder="끝 번호">
+          </div>
+
+          <div class="search" id="rangeText" hidden>
+            <input type="text" id="startText" class="text-in" placeholder="첫 대사">
+            <span class="range-sep">~</span>
+            <input type="text" id="endText" class="text-in" placeholder="끝 대사">
+          </div>
+
+          <button type="button" id="applyBtn" class="btn outline icon" aria-label="이 범위로 출력" title="이 범위로 출력">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          </button>
         </div>
 
-        <div class="search" id="rangeText" hidden>
-          <input type="text" id="searchText" class="text-in" placeholder="대사 전체를 정확히 입력">
-          <button type="button" id="searchBtn" class="btn outline">이 대사 다음부터 출력</button>
-          <span id="searchInfo" class="search-info"></span>
-        </div>
-
+        <span id="applyInfo" class="search-info"></span>
         <span id="rangeInfo" class="range-info"></span>
       </div>
     </section>
 
     <section class="panel" id="outputPanel" hidden>
       <div class="output-head">
-        <h2>❸ 결과</h2>
+        <h2>🎬 결과</h2>
       </div>
       <div class="colors">
         <label class="color-opt">배경 <input type="color" id="optBg" class="color-in" value="#474747"></label>
@@ -147,6 +156,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=edf8921"></script>
+  <script src="app.js?v=5778801"></script>
 </body>
 </html>

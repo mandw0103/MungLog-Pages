@@ -55,11 +55,12 @@
     optFg2: $('#optFg2'),
     resetColors: $('#resetColors'),
     optStart: $('#optStart'),
-    totalCount: $('#totalCount'),
+    optEnd: $('#optEnd'),
     rangeInfo: $('#rangeInfo'),
-    searchText: $('#searchText'),
-    searchBtn: $('#searchBtn'),
-    searchInfo: $('#searchInfo'),
+    startText: $('#startText'),
+    endText: $('#endText'),
+    applyBtn: $('#applyBtn'),
+    applyInfo: $('#applyInfo'),
     modeNum: $('#modeNum'),
     modeText: $('#modeText'),
     modeToggle: $('#modeToggle'),
@@ -146,10 +147,13 @@
   function onLoaded() {
     els.loadInfo.hidden = false;
     els.loadInfo.textContent = `→ ${messages.length}건 로드${roomId ? ` (방: ${roomId})` : ''}`;
-    // 새 로그를 받으면 출력 범위·검색 상태를 처음으로 되돌린다.
-    els.optStart.value = '1';
-    els.searchText.value = '';
-    setSearchInfo('', '');
+    // 새 로그를 받으면 출력 범위·입력 상태를 처음(전체 출력)으로 되돌린다.
+    applied = { start: 1, end: null };
+    els.optStart.value = '';
+    els.optEnd.value = '';
+    els.startText.value = '';
+    els.endText.value = '';
+    setApplyInfo('');
     syncCutinUI();
     syncReorderUI();
     buildChannelFilter();
@@ -225,56 +229,91 @@
     return messages.filter(m => chans.has(channelKey(m)) && !isEmptyLog(m));
   }
 
-  // ── 출력 범위(시작 번호 ~ 끝) ────────────────────────────────
-  // 로그가 길 때 'N번째부터 끝까지'만 잘라 끊어서 저장할 수 있게 한다.
-  // 번호는 1부터 시작하며, 비었거나 1 미만이면 처음부터 출력.
-  function rangeStart(len) {
-    let start = parseInt(els.optStart.value, 10);
-    if (!Number.isFinite(start) || start < 1) start = 1;
-    // len+1 은 '끝 다음'(빈 출력)을 의미. 그보다 큰 값은 끝으로 맞춘다.
-    if (len && start > len + 1) start = len + 1;
-    return start;
-  }
+  // ── 출력 범위(첫 번째 ~ 끝 번째) ─────────────────────────────
+  // 로그가 길 때 원하는 구간만 잘라 끊어서 저장할 수 있게 한다.
+  // 번호는 1부터 시작하고 양끝을 모두 포함하며(inclusive), end 가 null 이면 끝까지.
+  //
+  // 입력값을 그대로 읽지 않고 '적용된 범위'를 따로 들고 있는 이유 — 출력 버튼을 눌러야
+  // 결과가 갱신되게 하기 위함이다. 긴 로그에서 번호를 고칠 때마다 전체를 다시 그리면
+  // 입력 도중에도 매번 재렌더가 걸려 무겁다.
+  let applied = { start: 1, end: null };
 
-  // 필터를 거친 뒤 시작 번호부터 끝까지 잘라낸 메시지 목록
+  // 적용된 범위로 잘라낸 메시지 목록. 범위가 목록을 넘으면 끝에 맞춰 자른다
+  // (채널 필터를 바꿔 총 건수가 줄어든 경우에도 안전하게 동작).
   function ranged() {
     const all = filtered();
-    return all.slice(rangeStart(all.length) - 1);
+    const start = Math.max(1, applied.start);
+    const end = applied.end == null ? all.length : Math.min(applied.end, all.length);
+    return end < start ? [] : all.slice(start - 1, end);
   }
 
-  // ── 대사로 시작 위치 찾기 ────────────────────────────────────
-  // 본문(text)이 입력과 '완전히' 일치하는 메시지를 찾아, 그 '다음'부터 출력되도록
-  // 시작 번호를 설정한다. 일치하는 대사가 없으면 안내만 띄운다.
-  function searchDialogue() {
-    const q = els.searchText.value;
-    if (!q) { setSearchInfo('', ''); return; }
+  // ── 출력 버튼: 입력값을 읽어 범위로 적용 ─────────────────────
+  // 잘못된 입력이면 안내만 띄우고 기존 범위를 유지한다(화면이 갑자기 비지 않게).
+  function applyRange() {
     const all = filtered();
-    const matches = [];
-    all.forEach((m, i) => { if (String(m.text ?? '') === q) matches.push(i); });
-    if (!matches.length) {
-      setSearchInfo('일치하는 대사가 없습니다.', '');   // hint 와 같은 색(muted)으로 안내
-      return;
-    }
-    const idx = matches[0];                 // 첫 번째 일치 대사
-    els.optStart.value = String(idx + 2);   // 그 대사 '다음'부터(1-based)
-    setSearchInfo('', '');                  // 일치하면 별도 안내 없이 바로 반영
+    const next = isTextMode() ? rangeFromText(all) : rangeFromNumbers();
+    if (!next) return;                  // 실패 사유는 각 함수가 안내
+    applied = next;
+    setApplyInfo('');
     render();
   }
 
-  function setSearchInfo(text, cls) {
-    els.searchInfo.textContent = text;
-    els.searchInfo.className = 'search-info' + (cls ? ' ' + cls : '');
+  // 갯수로 이어 출력 — 첫/끝 번호를 그대로 쓴다. 비우면 각각 처음·끝.
+  function rangeFromNumbers() {
+    const num = (v) => {
+      const n = parseInt(v, 10);
+      return Number.isFinite(n) ? n : null;
+    };
+    const start = Math.max(1, num(els.optStart.value) ?? 1);
+    const end = els.optEnd.value.trim() === '' ? null : num(els.optEnd.value);
+    if (end != null && end < start) {
+      setApplyInfo('끝 번호가 첫 번호보다 앞입니다.');
+      return null;
+    }
+    return { start, end };
+  }
+
+  // 대사로 이어 출력 — 본문(text)이 입력과 '완전히' 일치하는 로그를 찾아 그 위치를 쓴다.
+  // 첫 대사·끝 대사 모두 출력에 포함된다. 끝 대사는 첫 대사 이후 구간에서 찾아,
+  // 같은 대사가 여러 번 나와도 의도한 구간이 잡히게 한다.
+  function rangeFromText(all) {
+    const findFrom = (q, from) => {
+      for (let i = from; i < all.length; i++) if (String(all[i].text ?? '') === q) return i;
+      return -1;
+    };
+    const sq = els.startText.value;
+    const eq = els.endText.value;
+    let start = 1;
+    if (sq) {
+      const i = findFrom(sq, 0);
+      if (i < 0) { setApplyInfo('첫 대사와 일치하는 로그가 없습니다.'); return null; }
+      start = i + 1;
+    }
+    let end = null;
+    if (eq) {
+      const i = findFrom(eq, start - 1);
+      if (i < 0) { setApplyInfo('끝 대사와 일치하는 로그가 첫 대사 뒤에 없습니다.'); return null; }
+      end = i + 1;
+    }
+    return { start, end };
+  }
+
+  function setApplyInfo(text) {
+    els.applyInfo.textContent = text;
   }
 
   // ── 이어 출력 모드 토글 ──────────────────────────────────────
-  // 두 입력(갯수/대사)은 모두 시작 번호(optStart)를 정하는 같은 수단이라,
-  // 모드를 바꿔도 현재 출력 범위는 그대로 유지된다. 화면만 하나씩 보여준다.
+  // 두 모드는 같은 '출력' 버튼을 공유하며, 눌린 시점에 보이는 쪽 입력만 읽는다.
+  // 모드를 바꿔도 이미 적용된 범위는 그대로 유지된다(화면만 하나씩 보여준다).
+  function isTextMode() { return els.modeText.classList.contains('active'); }
+
   function setMode(mode) {
     const isText = mode === 'text';
     els.rangeNum.hidden = isText;
     els.rangeText.hidden = !isText;
     els.modeNum.classList.toggle('active', !isText);
     els.modeText.classList.toggle('active', isText);
+    setApplyInfo('');   // 안내는 방금 숨긴 입력에 대한 것이라 함께 지운다
     updateModeIndicator();
   }
 
@@ -647,15 +686,15 @@ body.reorder-mode .reorder-handle{ display: block; }
   function render() {
     orderDirty = false;   // 전체 재렌더는 항상 최신 순서·앵커로 그린다
     const all = filtered();
-    const start = rangeStart(all.length);
-    const list = all.slice(start - 1);
+    const list = ranged();
+    const start = Math.max(1, applied.start);
+    const end = applied.end == null ? all.length : Math.min(applied.end, all.length);
 
-    // 선택한 탭의 총 개수 / 실제 출력 건수를 안내
-    els.totalCount.textContent = String(all.length);
+    // 실제 출력 건수와 범위를 안내
     els.rangeInfo.textContent = !all.length
       ? ''
       : list.length
-        ? `→ ${list.length}건 출력 (${start}~${all.length}번째)`
+        ? `→ ${list.length}건 출력 (${start}~${end}번째)`
         : '→ 출력할 로그가 없습니다 (범위 끝)';
 
     // srcdoc 을 새로 쓰면 iframe 이 reload 되어 스크롤이 맨 위로 튄다.
@@ -680,9 +719,10 @@ body.reorder-mode .reorder-handle{ display: block; }
   function download() {
     const html = els.preview.dataset.html || buildDocument();
     const all = filtered();
-    const start = rangeStart(all.length);
-    // 일부만 잘라 저장한 경우(시작 번호 > 1) 파일명에 범위를 표시
-    const range = start > 1 ? `-${start}~${all.length}` : '';
+    const start = Math.max(1, applied.start);
+    const end = applied.end == null ? all.length : Math.min(applied.end, all.length);
+    // 일부만 잘라 저장한 경우 파일명에 범위를 표시
+    const range = (start > 1 || end < all.length) ? `-${start}~${end}` : '';
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -1248,9 +1288,10 @@ body.reorder-mode .reorder-handle{ display: block; }
   els.optFg.addEventListener('input', onColorChange);
   els.optFg2.addEventListener('input', onColorChange);
   els.resetColors.addEventListener('click', resetColors);
-  els.optStart.addEventListener('input', render);
-  els.searchBtn.addEventListener('click', searchDialogue);
-  els.searchText.addEventListener('keydown', (e) => { if (e.key === 'Enter') searchDialogue(); });
+  // 범위는 '출력' 버튼을 눌러야 반영된다(입력 중 재렌더 없음). 네 입력칸 모두 Enter 로도 적용.
+  els.applyBtn.addEventListener('click', applyRange);
+  [els.optStart, els.optEnd, els.startText, els.endText].forEach(el =>
+    el.addEventListener('keydown', (e) => { if (e.key === 'Enter') applyRange(); }));
   els.modeNum.addEventListener('click', () => setMode('num'));
   els.modeText.addEventListener('click', () => setMode('text'));
   els.downloadBtn.addEventListener('click', download);

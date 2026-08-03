@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>코코포리아 로그 변환기</title>
   <link rel="icon" type="image/png" href="icon.png">
-  <link rel="stylesheet" href="style.css?v=7242f62">
+  <link rel="stylesheet" href="style.css?v=22b2d79">
   <!-- 테마 초기 적용(깜빡임 방지) + 토글. 저장된 값이 없으면 시스템 설정을 따른다. -->
   <script>
     (function () {
@@ -104,9 +104,9 @@
       <!-- 제목 줄 — 기본값은 제목 바로 오른쪽, 적용은 줄 오른쪽 끝(결과 패널과 같은 배치) -->
       <div class="panel-head">
         <h2>🎨 스타일</h2>
-        <button type="button" id="resetColors" class="btn outline" title="기본 색으로 되돌리고 바로 적용">기본값</button>
+        <button type="button" id="resetColors" class="btn outline" title="기본 색·스탠딩 전부 ON 으로 되돌리고 바로 적용">기본값</button>
         <div class="actions">
-          <button type="button" id="applyColors" class="btn outline" title="고른 색을 결과에 반영" disabled>적용</button>
+          <button type="button" id="applyColors" class="btn outline" title="고른 색·스탠딩을 결과에 반영" disabled>적용</button>
         </div>
       </div>
       <div class="colors">
@@ -128,6 +128,13 @@
           <input type="color" id="optMid5" class="color-in roll-step" value="#cc0606">
         </div>
         <label class="color-opt" title="판정 최하 등급 색. 대성공 색과의 사이를 나눠 중간 등급 색이 자동으로 정해집니다"><input type="color" id="optFumble" class="color-in" value="#ff2d2d"><span class="color-name">대실패</span></label>
+      </div>
+      <!-- 스탠딩 OFF — 고른 캐릭터의 아바타를 출력에서 뺀다(옵션의 채널 필터와 같은 형태).
+           목록은 아바타가 실제로 그려지는 로그의 이름만 모아 로그를 받을 때 만든다.
+           색과 마찬가지로 위 '적용'을 눌러야 결과에 반영된다. -->
+      <div class="channels" id="avatarFilter" hidden>
+        <span class="channels-label">스탠딩 OFF</span>
+        <div id="avatarList" class="channel-list"></div>
       </div>
     </section>
 
@@ -190,6 +197,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=7242f62"></script>
+  <script src="app.js?v=22b2d79"></script>
 </body>
 </html>

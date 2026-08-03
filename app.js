@@ -67,6 +67,11 @@
   // 여기서 계산할 수 없다). 그 전에 읽히더라도 각 항목이 기본값으로 폴백해 안전하다.
   let appliedColors = {};
 
+  // 결과에 '적용된' 스탠딩 OFF 목록. 색과 같은 이유로 체크 즉시가 아니라 '적용'을 눌러야
+  // 갱신된다 — 같은 패널의 설정이 서로 다른 시점에 반영되면 무엇이 결과에 들어갔는지
+  // 알기 어렵고, 로그가 길면 캐릭터를 고를 때마다 전체를 다시 그리는 비용도 크다.
+  let appliedNoAvatar = new Set();
+
   const $ = (sel) => document.querySelector(sel);
 
   const els = {
@@ -101,6 +106,8 @@
     rangeNum: $('#rangeNum'),
     rangeText: $('#rangeText'),
     channelList: $('#channelList'),
+    avatarFilter: $('#avatarFilter'),
+    avatarList: $('#avatarList'),
     preview: $('#preview'),
     copyBtn: $('#copyBtn'),
     downloadBtn: $('#downloadBtn'),
@@ -207,6 +214,9 @@
   // 시스템 메시지: 스탯 변동 등(예: "[ 호은 ] HP : 20 → 19")
   const isSystem = (m) => m.type === 'system';
 
+  // 스탠딩(아바타) OFF 의 기준 키 — 같은 캐릭터가 도중에 아이콘을 바꿔도 이름 하나로 묶는다.
+  const avatarName = (m) => String(m.name ?? '');
+
   // 본문 색 — 메인 탭만 글자(--log-fg), 그 밖의 탭(정보·잡담·비밀 등)은 글자2(--log-fg2)로
   // 한 톤 낮춰 메인 대사가 두드러지게 한다. 이름 색·시각은 각자 규칙을 그대로 쓰므로
   // 여기서 바뀌는 건 본문뿐이다(본문 span 은 색을 따로 안 갖고 <p> 색을 물려받는다).
@@ -259,6 +269,7 @@
     syncDeleteUI();
     syncUndoUI();
     buildChannelFilter();
+    buildAvatarFilter();
     els.optionsPanel.hidden = false;
     els.stylePanel.hidden = false;
     els.outputPanel.hidden = false;
@@ -315,6 +326,52 @@
 
   function enabledChannels() {
     return new Set([...els.channelList.querySelectorAll('.chk-channel:checked')].map(c => c.value));
+  }
+
+  // ── 스탠딩(아바타) OFF 필터 ─────────────────────────────────
+  // 아바타가 실제로 그려지는 로그인지. 정보·시스템·판정은 아바타 자리에 라벨 박스가 오고,
+  // iconUrl 이 없으면 애초에 뺄 아바타가 없어 목록에 올릴 이유가 없다.
+  function hasAvatar(m) {
+    if (isInfo(m) || isSystem(m)) return false;
+    const roll = rollInfo(m);
+    if (roll && roll.outcome) return false;
+    return !!m.iconUrl;
+  }
+
+  // 아바타를 가진 캐릭터 목록(등장 순)을 만든다. 채널 필터·이어 출력 범위와 무관하게 전체
+  // 메시지에서 모으는 이유 — 채널을 껐다 켤 때마다 목록이 새로 그려지면 골라 둔 OFF 가
+  // 함께 날아간다. 목록은 로그를 받을 때 한 번만 만들고, 선택 상태는 체크박스가 들고 있는다.
+  // (체크는 '고른' 상태일 뿐이며, 결과에 들어가는 것은 '적용'을 누른 appliedNoAvatar 다.)
+  function buildAvatarFilter() {
+    const names = [];
+    const seen = new Set();
+    for (const m of messages) {
+      if (!hasAvatar(m)) continue;
+      const key = avatarName(m);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      names.push(key);
+    }
+    els.avatarList.innerHTML = '';
+    for (const key of names) {
+      const id = 'av_' + btoa(unescape(encodeURIComponent(key))).replace(/[^a-z0-9]/gi, '');
+      const wrap = document.createElement('label');
+      wrap.className = 'opt';
+      wrap.innerHTML = `<input type="checkbox" class="chk-avatar" value="${escapeHtml(key)}" id="${id}"><span class="opt-label">${escapeHtml(key || '이름없음')}</span>`;
+      els.avatarList.appendChild(wrap);
+    }
+    // 고르는 동안엔 '적용' 버튼 활성 여부만 갱신하고 결과는 건드리지 않는다(색과 동일).
+    els.avatarList.querySelectorAll('.chk-avatar').forEach(c => c.addEventListener('change', syncApplyStyleUI));
+    // 아바타를 가진 캐릭터가 하나도 없으면 항목째 감춘다(끌 것이 없다).
+    els.avatarFilter.hidden = names.length === 0;
+    // 새 목록은 전부 체크 해제(스탠딩 ON) 상태이므로 적용된 값도 함께 비운다.
+    appliedNoAvatar = new Set();
+    syncApplyStyleUI();
+  }
+
+  // 스탠딩을 끈(체크한) 캐릭터 이름들.
+  function hiddenAvatars() {
+    return new Set([...els.avatarList.querySelectorAll('.chk-avatar:checked')].map(c => c.value));
   }
 
   // ── 필터 적용 ────────────────────────────────────────────────
@@ -577,7 +634,9 @@ ${HR}`;
     // 우리 CSS 를 덮어써 크롭이 깨지는데, 인라인은 그런 규칙보다 항상 우선한다.
     // loading="lazy" — 화면에 들어올 때 받는다. 아바타가 수천 개여도 붙여넣은 편집기·
     // 페이지가 이미지를 한꺼번에 요청하지 않아 초기 멈춤이 크게 줄어든다.
-    const icon = m.iconUrl
+    // '스탠딩 OFF' 로 고른 캐릭터는 아바타 이미지만 뺀다. 아바타 칸(.msg_container)은 그대로
+    // 둬서, 아이콘 없이 발언한 로그와 똑같은 모습이 되고 본문 시작 위치도 다른 줄과 맞는다.
+    const icon = (m.iconUrl && !opt.noAvatar.has(avatarName(m)))
       ? `<img src="${escapeHtml(m.iconUrl)}" alt="${escapeHtml(m.name || '')}" style="width: 40px; height: 40px; object-fit: cover; object-position: top center; border-radius: 0;" loading="lazy" referrerpolicy="no-referrer">`
       : '';
 
@@ -666,6 +725,7 @@ ${HR}`;
     const opt = {
       time: els.optTime.checked,
       secret: els.optSecret.checked,   // 시크릿 다이스(S 명령) 내용을 가릴지
+      noAvatar: appliedNoAvatar,       // 스탠딩(아바타)을 끈 캐릭터 — '적용'된 목록
       preview: !!(view && view.preview),
       colors: new Map(),      // 이름 색 → 클래스. 행을 만드는 동안 채워진다.
     };
@@ -1736,25 +1796,33 @@ body.delete-mode .row-del{ display: block; }
     }
     appliedColors = readColorInputs();
     syncRollTitles();
-    syncApplyColorsUI();
+    syncApplyStyleUI();
   }
 
-  // 고른 색이 적용된 색과 다른지(=적용할 게 있는지).
-  function colorsDirty() {
+  // 고른 색·스탠딩이 적용된 값과 다른지(=적용할 게 있는지).
+  function styleDirty() {
     const c = readColorInputs();
-    return Object.keys(c).some(k => c[k] !== appliedColors[k]);
+    if (Object.keys(c).some(k => c[k] !== appliedColors[k])) return true;
+    const off = hiddenAvatars();
+    if (off.size !== appliedNoAvatar.size) return true;
+    for (const n of off) if (!appliedNoAvatar.has(n)) return true;
+    return false;
   }
 
   // 적용할 게 없으면 '적용' 버튼을 흐리게 둬, 눌러야 반영된다는 것을 드러낸다.
-  // 색을 고르는 동안(input 이벤트)에도 호출되지만 재렌더가 없어 가볍다.
-  function syncApplyColorsUI() {
-    els.applyColors.disabled = !colorsDirty();
+  // 색·스탠딩을 고르는 동안(input·change 이벤트)에도 호출되지만 재렌더가 없어 가볍다.
+  function syncApplyStyleUI() {
+    els.applyColors.disabled = !styleDirty();
   }
 
-  // '적용' — 고른 색을 결과에 반영하고 저장한다(미리보기·다운로드용 HTML 모두 새 색으로 갱신).
-  // 색상 팔레트(input[type=color]) 값은 항상 핵사(#rrggbb)라 색상 형식은 헥사만 쓰인다.
-  function applyColors() {
+  // '적용' — 이 패널에서 고른 것(색 · 스탠딩 OFF)을 한 번에 결과에 반영한다
+  // (미리보기·다운로드용 HTML 모두 갱신). 색상 팔레트(input[type=color]) 값은 항상
+  // 헥사(#rrggbb)라 색상 형식은 헥사만 쓰인다.
+  // 색은 브라우저에 저장하지만 스탠딩은 저장하지 않는다 — 캐릭터 이름은 방마다 달라
+  // 다음 방에서 되살리면 엉뚱한 사람이 꺼져 있게 된다.
+  function applyStyle() {
     appliedColors = readColorInputs();
+    appliedNoAvatar = hiddenAvatars();
     try {
       localStorage.setItem(LOG_BG_LS, appliedColors.bg);
       localStorage.setItem(LOG_FG_LS, appliedColors.fg);
@@ -1762,12 +1830,14 @@ body.delete-mode .row-del{ display: block; }
       localStorage.setItem(LOG_TIME_LS, appliedColors.time);
       ROLL_KEYS.forEach((k, i) => localStorage.setItem(ROLL_LS[i], appliedColors[k]));
     } catch (e) { /* ignore */ }
-    syncApplyColorsUI();
+    syncApplyStyleUI();
     render();
   }
 
-  // '기본값' — 선택기를 기본 색으로 되돌리고 곧바로 적용한다(한 번의 재렌더).
-  function resetColors() {
+  // '기본값' — 이 패널을 통째로 처음 상태(기본 색 + 스탠딩 전부 ON)로 되돌리고 곧바로
+  // 적용한다(한 번의 재렌더). 적용과 짝이 되는 패널 단위 버튼이라 스탠딩도 함께 되돌린다 —
+  // 색만 되돌리면, 아직 적용하지 않은 스탠딩 선택이 이 버튼에 딸려 반영돼 버린다.
+  function resetStyle() {
     els.optBg.value = LOG_BG_DEFAULT;
     els.optFg.value = LOG_FG_DEFAULT;
     els.optFg2.value = LOG_FG2_DEFAULT;
@@ -1776,7 +1846,8 @@ body.delete-mode .row-del{ display: block; }
     els.optFumble.value = ROLL_FUMBLE_DEFAULT;
     fillRollMids();          // 사이 네 칸도 자동 계산값으로 되돌린다
     syncRollTitles();
-    applyColors();
+    els.avatarList.querySelectorAll('.chk-avatar').forEach(c => { c.checked = false; });
+    applyStyle();
   }
   initColors();
 
@@ -1798,9 +1869,9 @@ body.delete-mode .row-del{ display: block; }
   // 새로 채워진 값으로 툴팁·적용 버튼 상태가 잡히게 한다(결과 재렌더는 없다).
   [els.optCrit, els.optFumble].forEach(el => el.addEventListener('input', fillRollMids));
   [els.optBg, els.optFg, els.optFg2, els.optTimeColor, ...rollInputs].forEach(el =>
-    el.addEventListener('input', () => { syncRollTitles(); syncApplyColorsUI(); }));
-  els.applyColors.addEventListener('click', applyColors);
-  els.resetColors.addEventListener('click', resetColors);
+    el.addEventListener('input', () => { syncRollTitles(); syncApplyStyleUI(); }));
+  els.applyColors.addEventListener('click', applyStyle);
+  els.resetColors.addEventListener('click', resetStyle);
   // 범위는 '출력' 버튼을 눌러야 반영된다(입력 중 재렌더 없음). 네 입력칸 모두 Enter 로도 적용.
   els.applyBtn.addEventListener('click', applyRange);
   [els.optStart, els.optEnd, els.startText, els.endText].forEach(el =>

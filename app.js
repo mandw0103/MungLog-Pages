@@ -50,6 +50,7 @@
     optionsPanel: $('#optionsPanel'),
     outputPanel: $('#outputPanel'),
     optTime: $('#optTime'),
+    optSecret: $('#optSecret'),
     optBg: $('#optBg'),
     optFg: $('#optFg'),
     optFg2: $('#optFg2'),
@@ -292,7 +293,7 @@
     let end = null;
     if (eq) {
       const i = findFrom(eq, start - 1);
-      if (i < 0) { setApplyInfo('끝 대사와 일치하는 로그가 첫 대사 뒤에 없습니다.'); return null; }
+      if (i < 0) { setApplyInfo('끝 대사와 일치하는 로그가 없습니다.'); return null; }
       end = i + 1;
     }
     return { start, end };
@@ -329,19 +330,46 @@
   // ── HTML 생성 (ccfolia 스킨 포맷) ────────────────────────────
   const textToHtml = (s) => escapeHtml(s).replace(/\n/g, '<br>');
 
-  const HR = `    <hr style="margin: 0 16px; padding: 0; border: 0; flex-shrink: 0; border-top: 1px solid var(--log-line, rgba(255, 255, 255, 0.08));">`;
+  const HR = `    <hr>`;
 
-  // 판정 결과 키워드별 스타일.
-  // 성공 = 초록 계열(등급 높을수록 더 밝고 선명), 실패 = 빨강 계열.
-  // 대성공·대실패는 글로우(text-shadow)로 크리티컬/펌블을 강조한다.
-  const RESULT_STYLES = {
-    '대성공': 'color: #56FC9A; font-size: 15px; font-weight: bold; text-shadow: rgba(86, 252, 154, 0.8) 0px 0px 5px;',
-    '대단한 성공': 'color: #00FE02; font-size: 15px; font-weight: bold;',
-    '어려운 성공': 'color: #00DC00; font-size: 15px; font-weight: bold;',
-    '보통 성공': 'color: #009A00; font-size: 15px; font-weight: bold;',
-    '실패': 'color: #CE0004; font-size: 15px; font-weight: bold;',
-    '대실패': 'color: rgb(255, 45, 45); font-size: 15px; font-weight: bold; text-shadow: rgba(255, 45, 45, 0.85) 0px 0px 6px;',
+  // 판정 결과 키워드 → CSS 클래스. 실제 색·글로우는 OUTPUT_CSS 의 .rs* 규칙에 있다.
+  // 스타일을 행마다 인라인으로 박으면 판정 로그 한 줄당 100 바이트 남짓이 반복돼,
+  // 긴 로그에서 결과 HTML 이 급격히 무거워진다.
+  const RESULT_CLASS = {
+    '대성공': 'rs1',
+    '대단한 성공': 'rs2',
+    '어려운 성공': 'rs3',
+    '보통 성공': 'rs4',
+    '실패': 'rs5',
+    '대실패': 'rs6',
   };
+
+  // ── 이름 색 → 클래스 ─────────────────────────────────────────
+  // 이름 색은 등장인물 수(보통 10~20)만큼만 있는데, 행마다 인라인으로 반복하면
+  // 낭비가 크다. 색마다 클래스를 하나씩 만들어 <style> 에 모으고 행에는 이름만 남긴다.
+  function nameClass(opt, color) {
+    const c = safeColor(color) || 'rgb(136, 136, 136)';
+    let cls = opt.colors.get(c);
+    if (!cls) { cls = 'n' + (opt.colors.size + 1); opt.colors.set(c, cls); }
+    return cls;
+  }
+
+  // 위에서 모은 이름 색들을 CSS 규칙으로 펼친다(행을 다 만든 뒤 호출해야 한다).
+  function nameColorCss(opt) {
+    let css = '';
+    opt.colors.forEach((cls, c) => {
+      css += `\n.ccfolia_wrap .${cls}{ color: ${c}; font-weight: bold; }`;
+    });
+    return css;
+  }
+
+  // ── 시크릿 다이스 ────────────────────────────────────────────
+  // 명령 맨 앞에 S 가 붙은 판정(S1D3 · SCHOICE · Scc<=80 민첩 …)은 굴린 사람만 결과를
+  // 아는 '시크릿 다이스'다. 옵션을 켜면 본문(명령+굴림결과)을 아래 문구로 갈음한다.
+  // 판정 메시지(extend.roll 이 있는 로그)에만 적용하므로, S 로 시작하는 일반 대사는
+  // 영향을 받지 않는다.
+  const SECRET_BODY = 'Secret dice 🎲';
+  const isSecretCommand = (text) => /^\s*s/i.test(String(text ?? ''));
 
   // 주사위 굴림 정보 추출. extend.roll 이 있으면 판정 메시지로 본다.
   function rollInfo(m) {
@@ -352,22 +380,25 @@
     const re = /(대성공|대단한 성공|어려운 성공|보통 성공|대실패|실패)/g;
     let match, outcome = null;
     while ((match = re.exec(r.result)) !== null) outcome = match[1];
-    return { full, outcome };
+    return { full, outcome, secret: isSecretCommand(m.text) };
   }
+
+  // 판정 본문 — 시크릿 다이스를 숨기는 옵션이 켜져 있으면 가림 문구로 바꾼다.
+  const rollBody = (roll, opt) => (opt.secret && roll.secret) ? SECRET_BODY : roll.full;
 
   // 판정(주사위) 메시지 — 다른 로그와 통일된 좌측 정렬 레이아웃.
   // 아바타 자리엔 "판정" 박스(정보 탭과 동일 형태), 이름은 메인 대사처럼 표기,
   // 본문(명령+굴림결과)은 결과 키워드별 색상으로 강조한다.
   function judgementHtml(m, roll, opt) {
-    const nameColor = safeColor(m.color) || 'rgb(136, 136, 136)';
-    const resultStyle = RESULT_STYLES[roll.outcome] || 'color: rgb(221, 221, 221); font-size: 15px; font-weight: bold;';
+    const nameCls = nameClass(opt, m.color);
+    // 시크릿 다이스를 숨길 땐 결과 색(성공/실패 계열)까지 감춰야 하므로 기본 스타일(rs0)로 낸다.
+    const hidden = opt.secret && roll.secret;
+    const resultCls = hidden ? 'rs0' : (RESULT_CLASS[roll.outcome] || 'rs0');
     const timeTag = (opt && opt.time && m.createdAt) ? `<b> - ${escapeHtml(fmtTime(m.createdAt))}</b>` : '';
-    return `    <div class="gap" style="display: flex; background-color: transparent;">
-        <div class="msg_container"><div style="width: 40px; height: 40px; background: transparent; border-radius: 0; display: flex; align-items: center; justify-content: center;">
-                        <span style="color: var(--log-fg2, #8d8d8d); font-size: 14px;"> 판정 </span>
-                      </div></div>
+    return `    <div class="gap">
+        <div class="msg_container"><div class="tag">판정</div></div>
         <p style="color: var(--log-fg, rgb(221, 221, 221));">
-        <span></span> <span style="color: ${nameColor}; font-weight: bold;">${escapeHtml(m.name || '이름없음')}</span>${timeTag}<span> <br> </span><span style="${resultStyle}"> ${textToHtml(roll.full)} </span>
+        <span class="${nameCls}">${escapeHtml(m.name || '이름없음')}</span>${timeTag}<span> <br> </span><span class="${resultCls}"> ${textToHtml(rollBody(roll, opt))} </span>
       </p>
     </div>
 ${HR}`;
@@ -375,12 +406,10 @@ ${HR}`;
 
   // 정보(info) 탭 메시지 — 아바타 대신 "정보" 박스 + 본문만 출력
   function infoHtml(m) {
-    return `    <div class="gap" style="display: flex; align-items: center; background-color: transparent;">
-        <div class="msg_container"><div style="width: 40px; height: 40px; background: transparent; border-radius: 0; display: flex; align-items: center; justify-content: center;">
-                        <span style="color: var(--log-fg2, #8d8d8d); font-size: 14px;"> 정보 </span>
-                      </div></div>
+    return `    <div class="gap mid">
+        <div class="msg_container"><div class="tag">정보</div></div>
         <p style="color: var(--log-fg2, rgb(157, 157, 157));">
-        <span></span> <span style="color: rgb(136, 136, 136);"></span><span> ${textToHtml(m.text || '')} </span>
+        <span> ${textToHtml(m.text || '')} </span>
       </p>
     </div>
 ${HR}`;
@@ -388,13 +417,12 @@ ${HR}`;
 
   // 시스템 메시지 — 아바타 자리에 "시스템" 박스(판정·정보와 동일 형태) + "system" 이름 + 본문
   function systemHtml(m, opt) {
+    const nameCls = nameClass(opt, 'rgb(136, 136, 136)');
     const timeTag = (opt.time && m.createdAt) ? `<b> - ${escapeHtml(fmtTime(m.createdAt))}</b>` : '';
-    return `    <div class="gap" style="display: flex; background-color: transparent;">
-        <div class="msg_container"><div style="width: 40px; height: 40px; background: transparent; border-radius: 0; display: flex; align-items: center; justify-content: center;">
-                        <span style="color: var(--log-fg2, #8d8d8d); font-size: 12px;">시스템</span>
-                      </div></div>
+    return `    <div class="gap">
+        <div class="msg_container"><div class="tag sm">시스템</div></div>
         <p style="color: var(--log-fg, rgb(221, 221, 221));">
-        <span></span> <span style="color: rgb(136, 136, 136); font-weight: bold;">${escapeHtml(m.name || 'system')}</span>${timeTag}<span> <br> </span><span style="font-weight: bold;"> ${textToHtml(m.text || '')} </span>
+        <span class="${nameCls}">${escapeHtml(m.name || 'system')}</span>${timeTag}<span> <br> </span><span class="bd"> ${textToHtml(m.text || '')} </span>
       </p>
     </div>
 ${HR}`;
@@ -411,10 +439,14 @@ ${HR}`;
     if (roll && roll.outcome) return judgementHtml(m, roll, opt);
 
     // 메인 탭 메시지
-    const nameColor = safeColor(m.color) || 'rgb(136, 136, 136)';
+    const nameCls = nameClass(opt, m.color);
 
+    // 아바타 크기·크롭은 인라인으로 둔다. 블로그 글에 붙여넣으면 스킨의 img 규칙이
+    // 우리 CSS 를 덮어써 크롭이 깨지는데, 인라인은 그런 규칙보다 항상 우선한다.
+    // loading="lazy" — 화면에 들어올 때 받는다. 아바타가 수천 개여도 붙여넣은 편집기·
+    // 페이지가 이미지를 한꺼번에 요청하지 않아 초기 멈춤이 크게 줄어든다.
     const icon = m.iconUrl
-      ? `<img src="${escapeHtml(m.iconUrl)}" alt="${escapeHtml(m.name || '')}" style="width: 40px; height: 40px; object-fit: cover; object-position: top center; border-radius: 0;" referrerpolicy="no-referrer">`
+      ? `<img src="${escapeHtml(m.iconUrl)}" alt="${escapeHtml(m.name || '')}" style="width: 40px; height: 40px; object-fit: cover; object-position: top center; border-radius: 0;" loading="lazy" referrerpolicy="no-referrer">`
       : '';
 
     // <b> 영역: 시간 표시(판정·시스템 메시지와 동일 형식)
@@ -422,13 +454,13 @@ ${HR}`;
 
     // 판정 키워드가 없는 주사위(예: 데미지 굴림)는 명령+결과를 본문으로 표시.
     // 주사위 본문은 판정처럼 볼드 처리하고, 일반 대사는 기본 굵기로 둔다.
-    const body = roll ? roll.full : (m.text || '');
-    const bodyStyle = roll ? ' style="font-weight: bold;"' : '';
+    const body = roll ? rollBody(roll, opt) : (m.text || '');
+    const bodyCls = roll ? ' class="bd"' : '';
 
-    return `    <div class="gap" style="display: flex; background-color: transparent;">
+    return `    <div class="gap">
         <div class="msg_container">${icon}</div>
         <p style="color: var(--log-fg, rgb(221, 221, 221));">
-        <span></span> <span style="color: ${nameColor}; font-weight: bold;">${escapeHtml(m.name || '이름없음')}</span>${bTag}<span> <br> </span><span${bodyStyle}> ${textToHtml(body)} </span>
+        <span class="${nameCls}">${escapeHtml(m.name || '이름없음')}</span>${bTag}<span> <br> </span><span${bodyCls}> ${textToHtml(body)} </span>
       </p>
     </div>
 ${HR}`;
@@ -446,9 +478,9 @@ ${HR}`;
     const cid = opt.preview ? ` data-cutin-id="${c.id}"` : '';
     // 업로드 중이면 자리 표시 박스, 완료되면 이미지(외부 링크일 수 있어 referrer 미전송).
     const inner = c.uploading
-      ? `<div style="padding: 24px; color: rgb(200, 160, 175); font-size: 14px;">이미지 업로드 중…</div>`
-      : `<img src="${c.src}" alt="컷인" style="max-width: 100%; border-radius: 5px; display: block;" referrerpolicy="no-referrer">`;
-    return `    <div class="gap cutin"${cid} style="display: flex; justify-content: center; background-color: transparent; position: relative;">
+      ? `<div class="cutin-wait">이미지 업로드 중…</div>`
+      : `<img src="${c.src}" alt="컷인" loading="lazy" referrerpolicy="no-referrer">`;
+    return `    <div class="gap cutin"${cid}>
         ${del}${inner}${handle}
     </div>
 ${HR}`;
@@ -477,7 +509,9 @@ ${HR}`;
         // 행 위쪽 경계 = 직전 메시지 뒤(=이 메시지 앞), 아래쪽 경계 = 이 메시지 뒤
         const attrs = ` data-mid="${escapeHtml(m._id)}"`
           + ` data-top-after="${escapeHtml(prevMid)}" data-bottom-after="${escapeHtml(m._id)}"`;
-        row = row.replace('<div class="gap"', '<div class="gap"' + attrs);
+        // class 목록이 타입마다 달라(gap / gap mid) 여는 태그의 class 속성 뒤에 끼워 넣는다.
+        // 치환값에 $ 가 들어가도 안전하도록 함수형 replace 를 쓴다.
+        row = row.replace(/^(\s*<div class="gap[^"]*")/, (mt) => mt + attrs);
         // 드래그 핸들을 .gap 닫는 태그 직전(</p> 뒤)에 넣는다. 모든 메시지 타입이 동일 종료 형태.
         row = row.replace('</p>\n    </div>', '</p>' + REORDER_HANDLE + '\n    </div>');
       }
@@ -491,10 +525,14 @@ ${HR}`;
   function buildDocument(list, view) {
     const opt = {
       time: els.optTime.checked,
+      secret: els.optSecret.checked,   // 시크릿 다이스(S 명령) 내용을 가릴지
       preview: !!(view && view.preview),
+      colors: new Map(),      // 이름 색 → 클래스. 행을 만드는 동안 채워진다.
     };
     const items = list || ranged();
     const rows = buildRows(items, opt);
+    // 행을 다 만든 뒤라야 등장한 이름 색이 모두 모여 있다.
+    const nameCss = nameColorCss(opt);
     const extraCss = opt.preview ? PREVIEW_CSS : '';
     // 마우스에 가까운 경계에 띄울 삽입 슬롯(미리보기 전용, JS 가 위치를 옮긴다)
     const bandEl = opt.preview ? '<div id="cutin-band">+ 여기에 컷인 삽입</div>' : '';
@@ -521,7 +559,7 @@ ${HR}`;
       <head>
       <meta charset="UTF-8">
         <style>
-${OUTPUT_CSS}${extraCss}${colorVars}${themeChrome}
+${OUTPUT_CSS}${nameCss}${extraCss}${colorVars}${themeChrome}
         </style>
       </head>
       <body>
@@ -548,6 +586,7 @@ ${rows}
 }
 
   .ccfolia_wrap span {
+    color: inherit;   /* 붙여넣은 블로그 스킨의 span 규칙이 대사 색을 덮어쓰지 않게 */
     font-size: 14px;
     font-family: "Roboto", "Helvetica", "Arial", sans-serif;
     line-height: 1.5;
@@ -582,8 +621,26 @@ ${rows}
 }
 
 .ccfolia_wrap .msg_container img {
-width: 40px;
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  object-position: top center;
+  border-radius: 0;
 }
+
+/* 아바타 자리의 라벨 박스 — 판정·정보·시스템 로그에 쓴다(.sm 은 '시스템'용 작은 글씨) */
+.ccfolia_wrap .tag {
+  width: 40px;
+  height: 40px;
+  background: transparent;
+  border-radius: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--log-fg2, #8d8d8d);
+  font-size: 14px;
+}
+.ccfolia_wrap .tag.sm { font-size: 12px; }
 
 .ccfolia_wrap span:before {
   display: none !important ;
@@ -602,7 +659,37 @@ width: 100%;
 box-sizing: border-box;
 text-align: left;
 padding: 16px 16px;
+background-color: transparent;
 }
+/* 정보 로그는 아이콘과 본문을 세로 가운데로 맞춘다 */
+.ccfolia_wrap .gap.mid{ align-items: center; }
+/* 주사위·시스템 본문 강조 */
+.ccfolia_wrap .bd{ font-weight: bold; }
+
+/* 로그 사이 구분선 */
+.ccfolia_wrap hr{
+  margin: 0 16px;
+  padding: 0;
+  border: 0;
+  flex-shrink: 0;
+  border-top: 1px solid var(--log-line, rgba(255, 255, 255, 0.08));
+}
+
+/* 컷인(로그 사이 이미지) — 가운데 정렬, 가로가 넘치면 영역에 맞춰 축소 */
+.ccfolia_wrap .cutin{ justify-content: center; }
+.ccfolia_wrap .cutin img{ max-width: 100%; border-radius: 5px; display: block; }
+.ccfolia_wrap .cutin-wait{ padding: 24px; color: rgb(200, 160, 175); font-size: 14px; }
+
+/* 판정 결과 — 성공은 초록 계열(등급이 높을수록 밝고 선명), 실패는 빨강 계열.
+   대성공·대실패는 글로우(text-shadow)로 크리티컬/펌블을 강조한다.
+   rs0 은 결과 키워드를 못 읽었을 때의 기본값. */
+.ccfolia_wrap .rs0{ color: rgb(221, 221, 221); font-size: 15px; font-weight: bold; }
+.ccfolia_wrap .rs1{ color: #56FC9A; font-size: 15px; font-weight: bold; text-shadow: rgba(86, 252, 154, 0.8) 0px 0px 5px; }
+.ccfolia_wrap .rs2{ color: #00FE02; font-size: 15px; font-weight: bold; }
+.ccfolia_wrap .rs3{ color: #00DC00; font-size: 15px; font-weight: bold; }
+.ccfolia_wrap .rs4{ color: #009A00; font-size: 15px; font-weight: bold; }
+.ccfolia_wrap .rs5{ color: #CE0004; font-size: 15px; font-weight: bold; }
+.ccfolia_wrap .rs6{ color: rgb(255, 45, 45); font-size: 15px; font-weight: bold; text-shadow: rgba(255, 45, 45, 0.85) 0px 0px 6px; }
 `;
 
   // 미리보기(삽입 모드)에서만 끼워 넣는 CSS — 삽입 슬롯·컷인 윤곽·삭제 버튼.
@@ -1282,7 +1369,7 @@ body.reorder-mode .reorder-handle{ display: block; }
     if (f) loadFile(f);
   });
 
-  [els.optTime].forEach(c => c.addEventListener('change', render));
+  [els.optTime, els.optSecret].forEach(c => c.addEventListener('change', render));
   // 색상 선택기: 드래그로 색을 고르는 동안에도 즉시 반영되도록 input 이벤트 사용.
   els.optBg.addEventListener('input', onColorChange);
   els.optFg.addEventListener('input', onColorChange);

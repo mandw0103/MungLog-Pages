@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>코코포리아 로그 변환기</title>
   <link rel="icon" type="image/png" href="icon.png">
-  <link rel="stylesheet" href="style.css?v=5778801">
+  <link rel="stylesheet" href="style.css?v=9cafab0">
   <!-- 테마 초기 적용(깜빡임 방지) + 토글. 저장된 값이 없으면 시스템 설정을 따른다. -->
   <script>
     (function () {
@@ -44,7 +44,7 @@
 
   <main>
     <section class="panel">
-      <h2>📩 로그 가져오기</h2>
+      <h2>📩 로그</h2>
 
       <div class="get-method">
         <p>아래 <strong>코코포리아 로그 가져오기</strong> 버튼을 <strong>북마크바로 드래그</strong>해 한 번 등록하세요.
@@ -63,6 +63,7 @@
       <h2>⚙️ 옵션</h2>
       <div class="options">
         <label class="opt"><input type="checkbox" id="optTime" checked><span class="opt-label">시간 표시</span></label>
+        <label class="opt" title="명령 앞에 S 가 붙은 판정(S1D3·SCHOICE·Scc&lt;=80 등)의 내용을 가립니다"><input type="checkbox" id="optSecret"><span class="opt-label">시크릿 다이스 숨기기</span></label>
       </div>
       <div class="channels">
         <span class="channels-label">채널</span>
@@ -156,6 +157,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=5778801"></script>
+  <script src="app.js?v=9cafab0"></script>
 </body>
 </html>

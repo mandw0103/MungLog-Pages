@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>코코포리아 로그 변환기</title>
   <link rel="icon" type="image/png" href="icon.png">
-  <link rel="stylesheet" href="style.css?v=22b2d79">
+  <link rel="stylesheet" href="style.css?v=602fd69">
   <!-- 테마 초기 적용(깜빡임 방지) + 토글. 저장된 값이 없으면 시스템 설정을 따른다. -->
   <script>
     (function () {
@@ -112,10 +112,11 @@
       <div class="colors">
         <label class="color-opt"><input type="color" id="optBg" class="color-in" value="#474747"><span class="color-name">배경</span></label>
         <label class="color-opt"><input type="color" id="optFg" class="color-in" value="#dddddd"><span class="color-name">메인</span></label>
-        <label class="color-opt" title="아바타 안 글자(판정·정보·시스템)·메인 외 탭 내용·구분선 색상"><input type="color" id="optFg2" class="color-in" value="#9d9d9d"><span class="color-name">정보·기타</span></label>
+        <label class="color-opt" title="아바타 안 글자(판정·정보)·메인 외 탭 내용·구분선 색상"><input type="color" id="optFg2" class="color-in" value="#9d9d9d"><span class="color-name">정보·기타</span></label>
         <label class="color-opt" title="이름 옆에 붙는 날짜·시각 색상"><input type="color" id="optTimeColor" class="color-in" value="#757575"><span class="color-name">시간</span></label>
+        <label class="color-opt" title="시스템 로그(스탯 변동·장식선 등) 본문 색상"><input type="color" id="optSys" class="color-in" value="#888888"><span class="color-name">시스템</span></label>
       </div>
-      <!-- 판정 등급 색 — 왼쪽부터 대성공·대단한 성공·어려운 성공·보통 성공·실패·대실패 순.
+      <!-- 판정 등급 색 — 왼쪽부터 대성공·극단적 성공·어려운 성공·보통 성공·실패·대실패 순.
            대성공/대실패를 고치면 성공 넷은 대성공 색에서, 실패 둘은 대실패 색에서 갈라져
            한 단계씩 어두워지도록 자동으로 채워진다(가운데 네 칸도 직접 고를 수 있다).
            대실패는 윗줄 '시간'과 같은 열에 오도록 가운데 띠의 너비를 두 열 폭으로 고정한다. -->
@@ -197,6 +198,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=22b2d79"></script>
+  <script src="app.js?v=602fd69"></script>
 </body>
 </html>

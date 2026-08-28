@@ -50,6 +50,10 @@
   // 날짜·시각은 ccfolia 원본 캡션 색(rgb 117)을 그대로 쓴다 — 글자2 와 묶여 있던 동안엔
   // 한 톤 밝은 값(#9d9d9d)으로 끌려갔지만, 분리했으니 원래 톤으로 되돌린다.
   const LOG_TIME_DEFAULT = '#757575';
+  // 시스템 로그 본문 — ccfolia 가 이 타입에 쓰는 회색(rgb 136). 수집 JSON 의 color 필드도
+  // 같은 값(#888888)으로 들어온다. 메인 탭 대사와 달리 연출·스탯 변동 알림이라 한 톤 낮춘다.
+  const LOG_SYS_LS = 'trpglog-log-sys';
+  const LOG_SYS_DEFAULT = '#888888';
 
   // 판정 등급 색 — 대성공(첫)부터 대실패(끝)까지 6단계.
   // 양 끝을 고치면 사이 네 칸이 자동으로 다시 계산되고, 사이 칸도 직접 고를 수 있다.
@@ -85,6 +89,7 @@
     optFg: $('#optFg'),
     optFg2: $('#optFg2'),
     optTimeColor: $('#optTimeColor'),
+    optSys: $('#optSys'),
     optCrit: $('#optCrit'),
     optMid2: $('#optMid2'),
     optMid3: $('#optMid3'),
@@ -496,7 +501,7 @@
   // 긴 로그에서 결과 HTML 이 급격히 무거워진다.
   const RESULT_CLASS = {
     '대성공': 'rs1',
-    '대단한 성공': 'rs2',
+    '극단적 성공': 'rs2',
     '어려운 성공': 'rs3',
     '보통 성공': 'rs4',
     '실패': 'rs5',
@@ -520,9 +525,9 @@
   // i 번째 등급의 '자동 계산' 색.
   // 성공 네 등급은 대성공 색에서, 실패 두 등급은 대실패 색에서 갈라져 한 단계씩 어두워진다.
   // 색상(H)은 건드리지 않으므로 성공은 첫 색 계열, 실패는 둘째 색 계열이 그대로 유지된다.
-  //   대성공 ─▶ 대단한 ─▶ 어려운 ─▶ 보통     실패 ◀─ 대실패
+  //   대성공 ─▶ 극단적 ─▶ 어려운 ─▶ 보통     실패 ◀─ 대실패
   //   (원색)                       (가장 어두움)  (원색)
-  const ROLL_SUCCESS_STEPS = 4;   // 대성공·대단한 성공·어려운 성공·보통 성공
+  const ROLL_SUCCESS_STEPS = 4;   // 대성공·극단적 성공·어려운 성공·보통 성공
   function rollAuto(crit, fumble, i) {
     const success = i < ROLL_SUCCESS_STEPS;
     // 실패 계열은 목록의 끝(대실패)이 원색이라, 끝에서부터 거꾸로 단계를 센다.
@@ -566,7 +571,7 @@
     if (!r || typeof r.result !== 'string') return null;
     const full = (m.text || '') + r.result;            // 명령 + 굴림결과
     // result 문자열에서 마지막 결과 키워드(최종 판정)를 추출. 길이 우선 순서로 매칭.
-    const re = /(대성공|대단한 성공|어려운 성공|보통 성공|대실패|실패)/g;
+    const re = /(대성공|극단적 성공|어려운 성공|보통 성공|대실패|실패)/g;
     let match, outcome = null;
     while ((match = re.exec(r.result)) !== null) outcome = match[1];
     return { full, outcome, secret: isSecretCommand(m.text) };
@@ -604,15 +609,19 @@ ${HR}`;
 ${HR}`;
   }
 
-  // 시스템 메시지 — 아바타 자리에 "시스템" 박스(판정·정보와 동일 형태) + "system" 이름 + 본문
-  function systemHtml(m, opt) {
-    const nameCls = nameClass(opt, 'rgb(136, 136, 136)');
-    const timeTag = (opt.time && m.createdAt) ? `<b> - ${escapeHtml(fmtTime(m.createdAt))}</b>` : '';
+  // 시스템 메시지 — ccfolia 화면과 같은 모습으로 낸다.
+  // 실제 ccfolia 는 system 타입 로그에 이름·시각을 아예 그리지 않고(이름 칸이 빈 채로 남는다)
+  // 아바타 자리도 비워 둔 채 본문만 보여준다. 그래서 여기서도 라벨('시스템')·이름·시간을 넣지 않는다.
+  // 아바타 칸(.msg_container)은 자리만 지키고 배경을 지워, 본문 시작 위치는 다른 로그와 맞으면서
+  // 빈 회색 네모가 보이지 않게 한다.
+  // 본문 색은 스타일 패널의 '시스템' 색(--log-sys)을 .sys 클래스가 직접 쓴다 — 다른 로그처럼
+  // 인라인 style 로 박지 않으므로 시스템 로그가 많아도 결과 HTML 이 무거워지지 않는다.
+  // 본문은 굵게 하지 않고(.bd 없음) 줄바꿈·공백을 그대로 살린다 — ═════ 같은 장식선이
+  // 띄어쓰기 없이 길게 이어져도 칸 밖으로 넘치지 않도록 .sys 가 강제 줄바꿈을 건다.
+  function systemHtml(m) {
     return `    <div class="gap">
-        <div class="msg_container"><div class="tag sm">시스템</div></div>
-        <p style="color: ${bodyColor(m)};">
-        <span class="${nameCls}">${escapeHtml(m.name || 'system')}</span>${timeTag}<span> <br> </span><span class="bd"> ${textToHtml(m.text || '')} </span>
-      </p>
+        <div class="msg_container blank"></div>
+        <p><span class="sys">${textToHtml(m.text || '')}</span></p>
     </div>
 ${HR}`;
   }
@@ -621,7 +630,7 @@ ${HR}`;
     // 정보 탭은 전용 포맷으로 출력
     if (isInfo(m)) return infoHtml(m);
     // 시스템(스탯 변동) 메시지는 전용 포맷으로 출력
-    if (isSystem(m)) return systemHtml(m, opt);
+    if (isSystem(m)) return systemHtml(m);
 
     const roll = rollInfo(m);
     // 판정 결과 키워드가 잡히면 판정 전용 포맷으로 출력
@@ -750,9 +759,10 @@ ${HR}`;
     const logFg = safeColor(appliedColors.fg) || LOG_FG_DEFAULT;
     const logFg2 = safeColor(appliedColors.fg2) || LOG_FG2_DEFAULT;
     const logTime = safeColor(appliedColors.time) || LOG_TIME_DEFAULT;
+    const logSys = safeColor(appliedColors.sys) || LOG_SYS_DEFAULT;
     // 구분선(HR)은 글자2 색을 옅게(알파 0.25) 깐다 — 불투명 글자2면 선이 너무 진해지므로.
     const logLine = hexToRgba(logFg2, 0.25) || 'rgba(255, 255, 255, 0.08)';
-    const colorVars = `\n.ccfolia_wrap { --log-bg: ${logBg}; --log-fg: ${logFg}; --log-fg2: ${logFg2}; --log-time: ${logTime}; --log-line: ${logLine}; }`;
+    const colorVars = `\n.ccfolia_wrap { --log-bg: ${logBg}; --log-fg: ${logFg}; --log-fg2: ${logFg2}; --log-time: ${logTime}; --log-sys: ${logSys}; --log-line: ${logLine}; }`;
     // 미리보기(iframe)는 우리 문서라 페이지 전체를 사이트 테마에 맞춰 칠해 바깥 여백·스크롤바를
     // 통일한다. 반면 다운로드 HTML 은 블로그 글에 붙여넣을 수 있어 html·body 를 건드리지 않는다
     // (배경은 .ccfolia_wrap 이 스스로 칠하므로 로그 영역 색은 그대로다).
@@ -833,7 +843,26 @@ ${rows}
   border-radius: 0;
 }
 
-/* 아바타 자리의 라벨 박스 — 판정·정보·시스템 로그에 쓴다(.sm 은 '시스템'용 작은 글씨) */
+/* 시스템 로그의 빈 아바타 칸 — 가로 자리(40px)만 지켜 본문 시작 위치를 다른 줄과 맞추고,
+   ccfolia 처럼 아무것도 보이지 않게 회색 바탕을 지운다.
+   height 를 풀어 주는 것이 핵심 — .msg_container 의 40px 를 그대로 두면 한 줄짜리 시스템
+   로그(글줄 21px)에서 남는 19px 가 .gap 의 align-items:flex-start 때문에 전부 아래로 몰려,
+   위(16px)보다 아래(35px) 여백이 두 배 넘게 벌어진다. 비운 칸은 높이를 만들지 않게 해
+   행 높이가 글줄을 따르도록 한다(ccfolia 의 빈 아바타 div 와 같은 동작). */
+.ccfolia_wrap .msg_container.blank { background: transparent; height: auto; }
+
+/* 시스템 로그 본문 — ccfolia 의 본문 <p> 와 같은 줄바꿈 규칙.
+   pre-wrap 으로 공백·줄바꿈을 살리고, 띄어쓰기 없이 긴 장식선(═════…)도 칸 안에서 접히게 한다.
+   색은 전용 변수(--log-sys)로 따로 고른다 — .ccfolia_wrap span 의 color:inherit 보다
+   선택자가 구체적이라(클래스 2개 vs 클래스+요소) 이 규칙이 이긴다. */
+.ccfolia_wrap .sys {
+  color: var(--log-sys, #888888);
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+
+/* 아바타 자리의 라벨 박스 — 판정·정보 로그에 쓴다(시스템 로그는 이 칸을 비워 둔다) */
 .ccfolia_wrap .tag {
   width: 40px;
   height: 40px;
@@ -845,7 +874,6 @@ ${rows}
   color: var(--log-fg2, #8d8d8d);
   font-size: 14px;
 }
-.ccfolia_wrap .tag.sm { font-size: 12px; }
 
 .ccfolia_wrap span:before {
   display: none !important ;
@@ -1755,6 +1783,7 @@ body.delete-mode .row-del{ display: block; }
       fg: els.optFg.value,
       fg2: els.optFg2.value,
       time: els.optTimeColor.value,
+      sys: els.optSys.value,
     };
     ROLL_KEYS.forEach((k, i) => { c[k] = rollInputs[i].value; });
     return c;
@@ -1786,6 +1815,7 @@ body.delete-mode .row-del{ display: block; }
     // 분리 전에 저장된 브라우저에는 시각 색이 없다. 그때 글자2 를 직접 바꿔 뒀다면 그 값을
     // 이어받아 보이던 색을 지키고, 손댄 적이 없다면 새 기본값(ccfolia 원본 톤)으로 시작한다.
     els.optTimeColor.value = readLS(LOG_TIME_LS, readLS(LOG_FG2_LS, '') || LOG_TIME_DEFAULT);
+    els.optSys.value = readLS(LOG_SYS_LS, LOG_SYS_DEFAULT);
     els.optCrit.value = readLS(ROLL_LS[0], ROLL_CRIT_DEFAULT);
     els.optFumble.value = readLS(ROLL_LS[ROLL_STEPS - 1], ROLL_FUMBLE_DEFAULT);
     // 사이 네 칸은 우선 양 끝에서 계산해 채우고, 직접 고쳐 저장해 둔 칸만 그 값으로 되살린다.
@@ -1828,6 +1858,7 @@ body.delete-mode .row-del{ display: block; }
       localStorage.setItem(LOG_FG_LS, appliedColors.fg);
       localStorage.setItem(LOG_FG2_LS, appliedColors.fg2);
       localStorage.setItem(LOG_TIME_LS, appliedColors.time);
+      localStorage.setItem(LOG_SYS_LS, appliedColors.sys);
       ROLL_KEYS.forEach((k, i) => localStorage.setItem(ROLL_LS[i], appliedColors[k]));
     } catch (e) { /* ignore */ }
     syncApplyStyleUI();
@@ -1842,6 +1873,7 @@ body.delete-mode .row-del{ display: block; }
     els.optFg.value = LOG_FG_DEFAULT;
     els.optFg2.value = LOG_FG2_DEFAULT;
     els.optTimeColor.value = LOG_TIME_DEFAULT;
+    els.optSys.value = LOG_SYS_DEFAULT;
     els.optCrit.value = ROLL_CRIT_DEFAULT;
     els.optFumble.value = ROLL_FUMBLE_DEFAULT;
     fillRollMids();          // 사이 네 칸도 자동 계산값으로 되돌린다
@@ -1868,7 +1900,7 @@ body.delete-mode .row-del{ display: block; }
   // 판정 양 끝을 바꾸면 사이 네 칸을 먼저 다시 계산한다 — 아래 공통 처리보다 앞서 걸어,
   // 새로 채워진 값으로 툴팁·적용 버튼 상태가 잡히게 한다(결과 재렌더는 없다).
   [els.optCrit, els.optFumble].forEach(el => el.addEventListener('input', fillRollMids));
-  [els.optBg, els.optFg, els.optFg2, els.optTimeColor, ...rollInputs].forEach(el =>
+  [els.optBg, els.optFg, els.optFg2, els.optTimeColor, els.optSys, ...rollInputs].forEach(el =>
     el.addEventListener('input', () => { syncRollTitles(); syncApplyStyleUI(); }));
   els.applyColors.addEventListener('click', applyStyle);
   els.resetColors.addEventListener('click', resetStyle);
